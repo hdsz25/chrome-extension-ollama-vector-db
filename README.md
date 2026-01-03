@@ -38,7 +38,20 @@
 # 下载并安装 Ollama
 # 访问 https://ollama.ai 下载适合您操作系统的版本
 
-# 启动 Ollama 服务
+# ⚠️ 重要：配置环境变量以允许 Chrome 扩展访问
+# 在启动 Ollama 之前，必须设置 OLLAMA_ORIGINS=* 环境变量
+# 这将解决 Chrome 扩展的 CORS（跨域资源共享）问题
+
+# Linux/macOS
+export OLLAMA_ORIGINS=*
+ollama serve
+
+# Windows PowerShell
+$env:OLLAMA_ORIGINS="*"
+ollama serve
+
+# Windows CMD
+set OLLAMA_ORIGINS=*
 ollama serve
 
 # 拉取嵌入模型（推荐）
@@ -48,6 +61,12 @@ ollama pull nomic-embed-text
 # ollama pull all-minilm
 # ollama pull mxbai-embed-large
 ```
+
+**⚠️ 注意事项**：
+- 必须在启动 `ollama serve` 之前设置 `OLLAMA_ORIGINS=*` 环境变量
+- 如果不设置此变量，Chrome 扩展将无法连接到 Ollama 服务
+- `*` 表示允许所有来源访问，仅在本地开发环境中使用
+- 生产环境中建议限制为特定的扩展 ID
 
 ### 2. 启动 ChromaDB
 
@@ -262,18 +281,46 @@ const collections = await ChromaDBClient.getCollections('http://localhost:8000')
 
 **解决方案**:
 ```bash
-# 检查 Ollama 是否运行
+# 1. 检查 Ollama 是否运行
 curl http://localhost:11434/api/tags
 
-# 启动 Ollama 服务
+# 2. ⚠️ 检查是否设置了 OLLAMA_ORIGINS 环境变量
+# 这是 Chrome 扩展连接 Ollama 的关键配置
+# Linux/macOS
+echo $OLLAMA_ORIGINS
+
+# Windows PowerShell
+echo $env:OLLAMA_ORIGINS
+
+# Windows CMD
+echo %OLLAMA_ORIGINS%
+
+# 3. 如果未设置或设置不正确，重新启动 Ollama
+# 先停止当前运行的 Ollama 服务（Ctrl+C）
+
+# Linux/macOS
+export OLLAMA_ORIGINS=*
 ollama serve
 
-# 检查模型是否安装
+# Windows PowerShell
+$env:OLLAMA_ORIGINS="*"
+ollama serve
+
+# Windows CMD
+set OLLAMA_ORIGINS=*
+ollama serve
+
+# 4. 检查模型是否安装
 ollama list
 
-# 安装所需模型
+# 5. 安装所需模型
 ollama pull nomic-embed-text
 ```
+
+**常见错误**：
+- `CORS policy error` - 未设置 `OLLAMA_ORIGINS=*`
+- `Connection refused` - Ollama 服务未运行
+- `Model not found` - 模型未安装
 
 ### ChromaDB 连接失败
 
@@ -314,6 +361,20 @@ ollama show nomic-embed-text
 **问题**: 跨域请求被阻止
 
 **解决方案**:
+
+#### Ollama CORS 配置
+
+```bash
+# ⚠️ Chrome 扩展连接 Ollama 必须设置此环境变量
+export OLLAMA_ORIGINS=*
+ollama serve
+
+# 验证配置是否生效
+curl -H "Origin: chrome-extension://test" http://localhost:11434/api/tags
+```
+
+#### ChromaDB CORS 配置
+
 ```bash
 # 启动 ChromaDB 时允许所有来源
 chroma run --host 0.0.0.0 --port 8000
@@ -323,6 +384,11 @@ docker run -p 8000:8000 \
   -e ALLOW_RESET=TRUE \
   chromadb/chroma
 ```
+
+**说明**：
+- `OLLAMA_ORIGINS=*` 是必需的，Chrome 扩展无法连接到未配置此选项的 Ollama 服务
+- `*` 表示允许所有来源，仅用于本地开发
+- 生产环境建议限制为特定的扩展 ID
 
 ## 🎨 自定义配置
 
@@ -384,6 +450,16 @@ function cleanHTML(html) {
 - 支持 CORS 配置
 - 不存储敏感信息
 
+**⚠️ 重要安全提醒**：
+- `OLLAMA_ORIGINS=*` 环境变量允许所有来源访问 Ollama 服务
+- 仅在受信任的本地开发环境中使用此配置
+- 生产环境应限制为特定的扩展 ID，例如：
+  ```bash
+  export OLLAMA_ORIGINS="chrome-extension://your-extension-id"
+  ```
+- 确保 Ollama 和 ChromaDB 服务仅在内网运行
+- 定期更新 Ollama 和 ChromaDB 到最新版本
+
 ## 🤝 贡献指南
 
 欢迎贡献代码、报告问题或提出建议！
@@ -431,8 +507,7 @@ MIT License - 详见 LICENSE 文件
 如有问题或建议，请通过以下方式联系：
 
 - 提交 Issue
-- 发送邮件
-- 加入讨论区
+- 发送邮件 hdsz25@qq.com
 
 ## 🌟 支持
 
