@@ -25,7 +25,7 @@ const ChromaDBClient = {
 
         // 先尝试获取集合列表
         try {
-            const listEndpoint = `${url}api/v2/tenants/default/databases/default/collections`;
+            const listEndpoint = `${url}api/v2/tenants/default_tenant/databases/default_database/collections`;
             const response = await fetch(listEndpoint, {
                 method: 'GET',
                 headers: {
@@ -46,7 +46,7 @@ const ChromaDBClient = {
         }
 
         // 创建新集合
-        const createEndpoint = `${url}api/v2/tenants/default/databases/default/collections`;
+        const createEndpoint = `${url}api/v2/tenants/default_tenant/databases/default_database/collections`;
         const response = await fetch(createEndpoint, {
             method: 'POST',
             headers: {
@@ -117,14 +117,14 @@ const ChromaDBClient = {
         try {
             // 首先获取集合的 UUID
             const collectionId = await this.getCollectionId(baseUrl, collectionName);
-            
+
             if (!collectionId) {
                 throw new Error(`集合 ${collectionName} 不存在`);
             }
 
             const url = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
             // 使用 v2 API - 使用集合 UUID
-            const endpoint = `${url}api/v2/tenants/default/databases/default/collections/${collectionId}/add`;
+            const endpoint = `${url}api/v2/tenants/default_tenant/databases/default_database/collections/${collectionId}/add`;
 
             const response = await fetch(endpoint, {
                 method: 'POST',
@@ -166,14 +166,14 @@ const ChromaDBClient = {
         try {
             // 首先获取集合的 UUID
             const collectionId = await this.getCollectionId(baseUrl, collectionName);
-            
+
             if (!collectionId) {
                 throw new Error(`集合 ${collectionName} 不存在`);
             }
 
             const url = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
             // 使用 v2 API - 使用集合 UUID
-            const endpoint = `${url}api/v2/tenants/default/databases/default/collections/${collectionId}/add`;
+            const endpoint = `${url}api/v2/tenants/default_tenant/databases/default_database/collections/${collectionId}/add`;
 
             const response = await fetch(endpoint, {
                 method: 'POST',
@@ -223,14 +223,14 @@ const ChromaDBClient = {
         try {
             // 首先获取集合的 UUID
             const collectionId = await this.getCollectionId(baseUrl, collectionName);
-            
+
             if (!collectionId) {
                 throw new Error(`集合 ${collectionName} 不存在`);
             }
 
             const url = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
             // 使用 v2 API - 使用集合 UUID
-            const endpoint = `${url}api/v2/tenants/default/databases/default/collections/${collectionId}/query`;
+            const endpoint = `${url}api/v2/tenants/default_tenant/databases/default_database/collections/${collectionId}/query`;
 
             const requestBody = {
                 query_embeddings: query.queryEmbeddings,
@@ -281,14 +281,14 @@ const ChromaDBClient = {
         try {
             // 首先获取集合的 UUID
             const collectionId = await this.getCollectionId(baseUrl, collectionName);
-            
+
             if (!collectionId) {
                 throw new Error(`集合 ${collectionName} 不存在`);
             }
 
             const url = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
             // 使用 v2 API - 使用集合 UUID
-            const endpoint = `${url}api/v2/tenants/default/databases/default/collections/${collectionId}/get`;
+            const endpoint = `${url}api/v2/tenants/default_tenant/databases/default_database/collections/${collectionId}/get`;
 
             const requestBody = {};
             
@@ -357,14 +357,14 @@ const ChromaDBClient = {
         try {
             // 首先获取集合的 UUID
             const collectionId = await this.getCollectionId(baseUrl, collectionName);
-            
+
             if (!collectionId) {
                 throw new Error(`集合 ${collectionName} 不存在`);
             }
 
             const url = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
             // 使用 v2 API - 使用集合 UUID
-            const endpoint = `${url}api/v2/tenants/default/databases/default/collections/${collectionId}/delete`;
+            const endpoint = `${url}api/v2/tenants/default_tenant/databases/default_database/collections/${collectionId}/delete`;
 
             const response = await fetch(endpoint, {
                 method: 'POST',
@@ -403,7 +403,7 @@ const ChromaDBClient = {
 
         const url = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
         // 使用 v2 API（可以直接使用集合名称）
-        const endpoint = `${url}api/v2/tenants/default/databases/default/collections/${collectionName}`;
+        const endpoint = `${url}api/v2/tenants/default_tenant/databases/default_database/collections/${collectionName}`;
 
         try {
             const response = await fetch(endpoint, {
@@ -439,7 +439,7 @@ const ChromaDBClient = {
 
         // 获取集合列表
         try {
-            const endpoint = `${url}api/v2/tenants/default/databases/default/collections`;
+            const endpoint = `${url}api/v2/tenants/default_tenant/databases/default_database/collections`;
             const response = await fetch(endpoint, {
                 method: 'GET',
                 headers: {
@@ -480,7 +480,7 @@ const ChromaDBClient = {
             // 尝试不同的端点来测试连接（优先使用 v2）
             const endpoints = [
                 `${url}api/v2/heartbeat`,
-                `${url}api/v2/tenants/default/databases/default/collections`,
+                `${url}api/v2/tenants/default_tenant/databases/default_database/collections`,
                 `${url}api/v1/heartbeat`,
                 `${url}version`
             ];
@@ -531,7 +531,7 @@ const ChromaDBClient = {
 
         const url = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
         // 使用 v2 API
-        const endpoint = `${url}api/v2/tenants/default/databases/default/collections`;
+        const endpoint = `${url}api/v2/tenants/default_tenant/databases/default_database/collections`;
 
         try {
             const response = await fetch(endpoint, {

@@ -513,16 +513,33 @@ async function removeChromaServer(index) {
     
     // 从列表中删除
     chromaServers.splice(index, 1);
-    
+
     // 保存到存储
     await chrome.storage.local.set({ chromaServers });
-    
+
+    // 从分组中移除该服务器的集合
+    delete chromaCollectionsByServer[server.url];
+
+    // 更新全局集合列表
+    chromaCollections = Object.values(chromaCollectionsByServer).flat();
+
     // 更新 UI
     updateChromaServerUI();
-    
+
     // 更新管理页面的服务器选择器
     loadChromaServersToManage();
-    
+
+    // 更新捕获和搜索页面的多选下拉框
+    updateMultiSelectDropdown('capture', chromaCollections);
+    updateMultiSelectDropdown('search', chromaCollections);
+
+    // 清空该服务器集合的选择
+    selectedCaptureCollections = [];
+    selectedSearchCollections = [];
+    updateMultiSelectDisplay('capture');
+    updateMultiSelectDisplay('search');
+    saveSelectedCollections();
+
     // 如果删除的是当前选中的服务器，选择第一个服务器
     if (server.url === currentSettings.chromaUrl && chromaServers.length > 0) {
         elements.chromaUrlSelect.value = chromaServers[0].url;
@@ -759,13 +776,24 @@ async function deleteChromaCollection(serverUrl, collectionName) {
                 c => c.name !== collectionName
             );
         }
-        
+
         // 更新全局集合列表
         chromaCollections = Object.values(chromaCollectionsByServer).flat();
-        
+
         // 重新加载集合列表
         updateCollectionHierarchyUI();
-        updateCollectionUI();
+        updateCollectionUI(serverUrl);
+
+        // 更新捕获和搜索页面的多选下拉框
+        updateMultiSelectDropdown('capture', chromaCollections);
+        updateMultiSelectDropdown('search', chromaCollections);
+
+        // 清空被删除集合的选择
+        selectedCaptureCollections = selectedCaptureCollections.filter(c => c !== collectionName);
+        selectedSearchCollections = selectedSearchCollections.filter(c => c !== collectionName);
+        updateMultiSelectDisplay('capture');
+        updateMultiSelectDisplay('search');
+        saveSelectedCollections();
         
         alert('集合删除成功');
     } catch (error) {
@@ -889,39 +917,66 @@ async function updateCollectionsForServer(type, serverUrl) {
     if (!serverUrl) {
         // 如果没有选择服务器，清空集合列表
         updateMultiSelectDropdown(type, []);
+        // 清空选择
+        if (type === 'capture') {
+            selectedCaptureCollections = [];
+        } else {
+            selectedSearchCollections = [];
+        }
+        updateMultiSelectDisplay(type);
+        saveSelectedCollections();
         return;
     }
-    
+
     // 检查是否已经加载了该服务器的集合
     if (chromaCollectionsByServer[serverUrl]) {
         updateMultiSelectDropdown(type, chromaCollectionsByServer[serverUrl]);
+        // 清空之前的选择（因为切换了服务器）
+        if (type === 'capture') {
+            selectedCaptureCollections = [];
+        } else {
+            selectedSearchCollections = [];
+        }
+        updateMultiSelectDisplay(type);
+        saveSelectedCollections();
         return;
     }
-    
+
     // 如果没有加载，尝试加载
     try {
         const collections = await ChromaDBClient.getCollections(serverUrl);
         chromaCollectionsByServer[serverUrl] = collections || [];
         updateMultiSelectDropdown(type, collections);
-        
-        // 不再默认选择所有集合，保持用户之前的选择
-        // 如果用户之前没有选择任何集合，才默认选择第一个
-        const selectedKey = type === 'capture' ? 'selectedCaptureCollections' : 'selectedSearchCollections';
-        const selectedCollections = type === 'capture' ? selectedCaptureCollections : selectedSearchCollections;
-        
-        if (selectedCollections.length === 0 && collections && collections.length > 0) {
-            // 只在用户从未选择过集合时，默认选择第一个
+
+        // 清空之前的选择（因为切换了服务器）
+        if (type === 'capture') {
+            selectedCaptureCollections = [];
+        } else {
+            selectedSearchCollections = [];
+        }
+
+        // 如果有集合，默认选择第一个
+        if (collections && collections.length > 0) {
             if (type === 'capture') {
                 selectedCaptureCollections = [collections[0].name];
             } else {
                 selectedSearchCollections = [collections[0].name];
             }
-            updateMultiSelectDisplay(type);
-            saveSelectedCollections();
         }
+
+        updateMultiSelectDisplay(type);
+        saveSelectedCollections();
     } catch (error) {
         console.error(`加载服务器 ${serverUrl} 的集合失败:`, error);
         updateMultiSelectDropdown(type, []);
+        // 清空选择
+        if (type === 'capture') {
+            selectedCaptureCollections = [];
+        } else {
+            selectedSearchCollections = [];
+        }
+        updateMultiSelectDisplay(type);
+        saveSelectedCollections();
     }
 }
 
@@ -1564,24 +1619,15 @@ function displaySearchResults(results) {
         return;
     }
 
-    // 获取所有距离值，用于归一化
-    const distances = results.map(r => r.distance);
-    const maxDistance = Math.max(...distances, 1); // 避免除以0
-
     elements.resultsList.innerHTML = results.map((result, index) => {
         const distance = result.distance || 0;
-        
-        // 归一化距离到 0-1 范围，然后转换为相似度百分比
-        // 距离越小，相似度越高
-        const normalizedDistance = distance / maxDistance;
-        const similarity = Math.max(0, (1 - normalizedDistance) * 100);
-        
+
         return `
             <div class="result-item">
                 <div class="result-title">${escapeHtml(result.metadata.title || '无标题')}</div>
                 <div class="result-url">${escapeHtml(result.metadata.url || '未知 URL')}</div>
                 <div class="result-collection">集合: ${escapeHtml(result.collection)}</div>
-                <div class="result-score">相似度: ${similarity.toFixed(2)}%</div>
+                <div class="result-score">余弦距离: ${distance.toFixed(4)}</div>
             </div>
         `;
     }).join('');
@@ -1672,32 +1718,47 @@ function updateMultiSelectDropdown(type, collections) {
     const dropdown = type === 'capture' ? elements.captureCollectionDropdown : elements.searchCollectionDropdown;
     const display = type === 'capture' ? elements.captureCollectionDisplay : elements.searchCollectionDisplay;
     const container = display.parentElement;
-    
+
     if (!collections || collections.length === 0) {
         dropdown.innerHTML = '<div class="empty-state">暂无可用集合</div>';
         return;
     }
-    
+
+    // 获取当前集合的名称列表
+    const collectionNames = collections.map(c => c.name);
+
+    // 过滤掉不在当前集合列表中的选项
     const selected = type === 'capture' ? selectedCaptureCollections : selectedSearchCollections;
-    
+    const validSelected = selected.filter(name => collectionNames.includes(name));
+
+    // 更新选择列表（移除无效选项）
+    if (validSelected.length !== selected.length) {
+        if (type === 'capture') {
+            selectedCaptureCollections = validSelected;
+        } else {
+            selectedSearchCollections = validSelected;
+        }
+        saveSelectedCollections();
+    }
+
     dropdown.innerHTML = `
         <div class="multi-select-option">
-            <input type="checkbox" id="${type}-select-all" ${selected.length === collections.length ? 'checked' : ''}>
+            <input type="checkbox" id="${type}-select-all" ${validSelected.length === collections.length ? 'checked' : ''}>
             <label for="${type}-select-all">全选</label>
         </div>
         ${collections.map(collection => `
             <div class="multi-select-option">
-                <input type="checkbox" 
-                       id="${type}-${collection.name}" 
+                <input type="checkbox"
+                       id="${type}-${collection.name}"
                        value="${collection.name}"
-                       ${selected.includes(collection.name) ? 'checked' : ''}>
+                       ${validSelected.includes(collection.name) ? 'checked' : ''}>
                 <label for="${type}-${collection.name}">
                     <strong>${escapeHtml(collection.name)}</strong>
                 </label>
             </div>
         `).join('')}
     `;
-    
+
     // 添加事件监听器
     const selectAllCheckbox = dropdown.querySelector(`#${type}-select-all`);
     selectAllCheckbox.addEventListener('change', (e) => {
@@ -1705,7 +1766,7 @@ function updateMultiSelectDropdown(type, collections) {
         checkboxes.forEach(cb => cb.checked = e.target.checked);
         updateSelectedCollections(type, collections);
     });
-    
+
     const checkboxes = dropdown.querySelectorAll(`input[type="checkbox"]:not(#${type}-select-all)`);
     checkboxes.forEach(cb => {
         cb.addEventListener('change', () => {
@@ -1715,7 +1776,7 @@ function updateMultiSelectDropdown(type, collections) {
             selectAllCheckbox.checked = allChecked;
         });
     });
-    
+
     // 更新显示文本
     updateMultiSelectDisplay(type);
 }
@@ -1793,15 +1854,34 @@ function updateMultiSelectDisplay(type) {
     const textElement = type === 'capture' ? elements.captureCollectionText : elements.searchCollectionText;
     const countElement = type === 'capture' ? elements.captureCollectionCount : elements.searchCollectionCount;
     const selected = type === 'capture' ? selectedCaptureCollections : selectedSearchCollections;
-    
-    if (selected.length === 0) {
+
+    // 获取当前服务器的集合列表
+    const serverUrl = type === 'capture' ? elements.captureServer.value : elements.searchServer.value;
+    const currentCollections = serverUrl && chromaCollectionsByServer[serverUrl]
+        ? chromaCollectionsByServer[serverUrl].map(c => c.name)
+        : [];
+
+    // 过滤掉不在当前服务器集合列表中的选项
+    const validSelected = selected.filter(name => currentCollections.includes(name));
+
+    // 如果有无效的选择，更新选择列表
+    if (validSelected.length !== selected.length) {
+        if (type === 'capture') {
+            selectedCaptureCollections = validSelected;
+        } else {
+            selectedSearchCollections = validSelected;
+        }
+        saveSelectedCollections();
+    }
+
+    if (validSelected.length === 0) {
         textElement.textContent = '选择集合...';
         countElement.textContent = '';
-    } else if (selected.length === 1) {
-        textElement.textContent = selected[0];
+    } else if (validSelected.length === 1) {
+        textElement.textContent = validSelected[0];
         countElement.textContent = '';
     } else {
-        textElement.textContent = `已选择 ${selected.length} 个集合`;
+        textElement.textContent = `已选择 ${validSelected.length} 个集合`;
         countElement.textContent = '';
     }
 }

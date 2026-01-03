@@ -101,6 +101,13 @@ chroma run --host localhost --port 8000
 5. 选择嵌入模型（默认: `nomic-embed-text`）
 6. 点击"测试连接"确保服务正常运行
 
+**⚠️ ChromaDB 配置说明**：
+为了方便langchain 使用，扩展默认使用 `default_tenant` 作为 tenant 名称和 `default_database` 作为 database 名称。
+- 扩展默认使用 `default_tenant` 作为 tenant 名称
+- 扩展默认使用 `default_database` 作为 database 名称
+- 如果您的 ChromaDB 使用不同的 tenant/database 名称，请修改 `src/utils/chromadb-client.js` 文件中的配置
+- 所有 API 调用都使用 `api/v2/tenants/default_tenant/databases/default_database/...` 路径
+
 ## 📖 使用指南
 
 ### 捕获网页内容
@@ -118,6 +125,14 @@ chroma run --host localhost --port 8000
 3. 在搜索框中输入查询文本
 4. 点击"搜索"或按 Enter 键
 5. 查看按相关性排序的搜索结果
+
+**📊 搜索结果说明**：
+- 搜索结果按余弦距离排序，距离越小表示越相似
+- 余弦距离范围通常在 0-2 之间：
+  - 0 表示完全相同
+  - 1 表示不相关
+  - 2 表示完全相反
+- 每个结果显示：标题、URL、所属集合、余弦距离
 
 ### 管理集合
 
@@ -238,6 +253,12 @@ const status = await OllamaClient.testConnection('http://localhost:11434');
 ```
 
 ### ChromaDB API
+
+**⚠️ 重要配置**：
+- 所有 API 调用默认使用 `default_tenant` 作为 tenant
+- 所有 API 调用默认使用 `default_database` 作为 database
+- API 路径格式：`api/v2/tenants/default_tenant/databases/default_database/...`
+- 如需修改，请编辑 `src/utils/chromadb-client.js` 文件
 
 #### 添加文档
 
@@ -406,6 +427,28 @@ let currentSettings = {
 };
 ```
 
+### 修改 ChromaDB Tenant 和 Database
+
+如果您的 ChromaDB 使用不同的 tenant 或 database 名称，需要修改 `src/utils/chromadb-client.js` 文件：
+
+```javascript
+// 将所有的：
+api/v2/tenants/default/databases/default/collections
+
+// 替换为：
+api/v2/tenants/your_tenant/databases/your_database/collections
+```
+
+例如，使用 `my_tenant` 和 `my_database`：
+```javascript
+const endpoint = `${url}api/v2/tenants/my_tenant/databases/my_database/collections`;
+```
+
+**⚠️ 注意**：
+- 需要替换文件中所有出现 `tenants/default/databases/default` 的地方
+- 共有 12 处需要修改
+- 修改后重新加载扩展
+
 ### 添加新的嵌入模型
 
 1. 在 Ollama 中安装新模型：`ollama pull your-model`
@@ -486,6 +529,21 @@ function cleanHTML(html) {
 - ✅ 初始版本发布
 - ✅ 网页内容捕获功能
 - ✅ 语义搜索功能
+- ✅ 集合管理功能
+- ✅ 多服务器支持
+- ✅ 模型选择功能
+- ✅ 内容管理功能
+- ✅ 现代化 UI 设计
+
+### 最新改进
+
+- ✅ 修复切换服务器后集合下拉框残留旧选项的问题
+- ✅ 修复删除集合后所有页面下拉框不自动刷新的问题
+- ✅ 修复删除服务器后集合下拉框不自动刷新的问题
+- ✅ 搜索结果显示余弦距离而非百分比相似度
+- ✅ 配置 ChromaDB 使用 `default_tenant` 和 `default_database`
+- ✅ 添加 OLLAMA_ORIGINS 环境变量配置说明
+- ✅ 优化集合选择逻辑，自动过滤无效选项
 - ✅ 集合管理功能
 - ✅ 多服务器支持
 - ✅ 模型选择功能
