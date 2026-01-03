@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="url(#grad1)" />
+  
+  <!-- Database icon -->
+  <g fill="white">
+    <!-- Top ellipse -->
+    <ellipse cx="64" cy="35" rx="30" ry="12" />
+    
+    <!-- Cylinder body -->
+    <path d="M34 35 v30 c0 6.6 13.4 12 30 12 s30 -5.4 30 -12 v-30" />
+    
+    <!-- Middle line -->
+    <ellipse cx="64" cy="50" rx="30" ry="12" fill="none" stroke="white" stroke-width="2" />
+    
+    <!-- Bottom line -->
+    <ellipse cx="64" cy="65" rx="30" ry="12" fill="none" stroke="white" stroke-width="2" />
+  </g>
+  
+  <!-- Vector symbol -->
+  <g stroke="white" stroke-width="3" fill="none" stroke-linecap="round">
+    <path d="M45 80 l20 20 l25 -30" />
+  </g>
+</svg>

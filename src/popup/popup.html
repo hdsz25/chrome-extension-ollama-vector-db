@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama Vector Database Extension</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 标签页导航 -->
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="capture">捕获</button>
+            <button class="tab-btn" data-tab="search">搜索</button>
+            <button class="tab-btn" data-tab="manage">管理</button>
+            <button class="tab-btn" data-tab="settings">设置</button>
+        </div>
+
+        <!-- 捕获标签页 -->
+        <div class="tab-content active" id="capture">
+            <div class="section">
+                <h2>捕获当前页面</h2>
+                <p class="description">提取当前网页内容并存储到向量数据库</p>
+                
+                <div class="form-group">
+                    <label for="captureServer">选择服务器</label>
+                    <select id="captureServer" class="input-field">
+                        <option value="">选择服务器...</option>
+                    </select>
+                    <small id="captureServerUrl">选择 ChromaDB 服务器</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="captureCollection">选择集合</label>
+                    <div class="multi-select-container">
+                        <div id="captureCollectionDisplay" class="input-field" style="cursor: pointer;">
+                            <span id="captureCollectionText">选择集合...</span>
+                            <span id="captureCollectionCount" class="selected-count"></span>
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
+                        <div id="captureCollectionDropdown" class="multi-select-dropdown">
+                            <!-- 动态填充 -->
+                        </div>
+                    </div>
+                    <small>选择要存储到的集合（可多选）</small>
+                </div>
+                
+                <div class="capture-buttons">
+                    <button id="captureBtn" class="btn btn-primary">
+                        <span class="btn-icon">📄</span>
+                        捕获当前页面
+                    </button>
+                    <button id="captureSelectionBtn" class="btn btn-secondary">
+                        <span class="btn-icon">✂️</span>
+                        捕获选择内容
+                    </button>
+                </div>
+                
+                <div id="captureStatus" class="status hidden">
+                    <div class="status-message"></div>
+                    <div class="progress-bar hidden">
+                        <div class="progress-fill"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 搜索标签页 -->
+        <div class="tab-content" id="search">
+            <div class="section">
+                <h2>搜索相似内容</h2>
+                <p class="description">基于向量相似性搜索已捕获的内容</p>
+                
+                <div class="form-group">
+                    <label for="searchServer">选择服务器</label>
+                    <select id="searchServer" class="input-field">
+                        <option value="">选择服务器...</option>
+                    </select>
+                    <small id="searchServerUrl">选择 ChromaDB 服务器</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="searchCollection">选择集合</label>
+                    <div class="multi-select-container">
+                        <div id="searchCollectionDisplay" class="input-field" style="cursor: pointer;">
+                            <span id="searchCollectionText">选择集合...</span>
+                            <span id="searchCollectionCount" class="selected-count"></span>
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
+                        <div id="searchCollectionDropdown" class="multi-select-dropdown">
+                            <!-- 动态填充 -->
+                        </div>
+                    </div>
+                    <small>选择要搜索的集合（可多选）</small>
+                </div>
+                
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="输入搜索查询..." class="input-field">
+                    <button id="searchBtn" class="btn btn-primary">
+                        <span class="btn-icon">🔍</span>
+                        搜索
+                    </button>
+                </div>
+                
+                <div id="searchResults" class="status hidden">
+                    <h3>搜索结果</h3>
+                    <div class="results-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 管理标签页 -->
+        <div class="tab-content" id="manage">
+            <!-- 集合管理 -->
+            <div class="section">
+                <h2>集合管理</h2>
+                <p class="description">创建和管理 ChromaDB 集合</p>
+                
+                <div class="form-group">
+                    <label>选择服务器</label>
+                    <select id="manageServerSelect" class="input-field">
+                        <option value="">选择服务器...</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>创建新集合</label>
+                    <div class="add-server-box">
+                        <input type="text" id="newCollectionName" class="input-field" placeholder="输入集合名称 (如 webpages)">
+                        <button id="createCollectionBtn" class="btn btn-secondary btn-sm">
+                            <span class="btn-icon">➕</span>
+                            创建
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="actions">
+                    <button id="loadCollectionsBtn" class="btn btn-secondary">
+                        <span class="btn-icon">🔄</span>
+                        刷新集合列表
+                    </button>
+                </div>
+                
+                <div id="collectionList" class="manage-list">
+                    <div class="loading">加载中...</div>
+                </div>
+            </div>
+
+            <!-- 内容管理 -->
+            <div class="section">
+                <h2>内容管理</h2>
+                <p class="description">查看和管理已捕获的网页内容</p>
+                
+                <div class="form-group">
+                    <label for="manageCollectionSelect">选择集合</label>
+                    <select id="manageCollectionSelect" class="input-field">
+                        <option value="">选择集合...</option>
+                    </select>
+                </div>
+                
+                <div class="actions">
+                    <button id="refreshContentBtn" class="btn btn-secondary">
+                        <span class="btn-icon">🔄</span>
+                        刷新内容
+                    </button>
+                    <button id="clearAllContentBtn" class="btn btn-danger">
+                        <span class="btn-icon">🗑️</span>
+                        清空所有
+                    </button>
+                </div>
+                
+                <div id="contentList" class="manage-list">
+                    <div class="loading">加载中...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 设置标签页 -->
+        <div class="tab-content" id="settings">
+            <div class="section">
+                <h2>设置</h2>
+                <p class="description">配置扩展的连接和模型设置</p>
+                
+                <div class="settings-form">
+                    <div class="form-group">
+                        <label for="ollamaUrl">Ollama 服务器地址</label>
+                        <div class="input-with-action">
+                            <input type="text" id="ollamaUrl" class="input-field" value="http://localhost:11434">
+                            <button id="testOllamaBtn" class="btn btn-secondary btn-sm">
+                                <span class="btn-icon">🔗</span>
+                                测试
+                            </button>
+                        </div>
+                        <div id="ollamaTestStatus" class="test-status hidden"></div>
+                        <small>默认: http://localhost:11434</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>ChromaDB 服务器</label>
+                        <div class="select-with-action">
+                            <select id="chromaUrlSelect" class="input-field">
+                                <option value="">选择服务器...</option>
+                            </select>
+                            <button id="testChromaBtn" class="btn btn-secondary btn-sm">
+                                <span class="btn-icon">🔗</span>
+                                测试
+                            </button>
+                        </div>
+                        <div id="chromaTestStatus" class="test-status hidden"></div>
+                        <input type="hidden" id="chromaUrl" value="">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>添加 ChromaDB 服务器</label>
+                        <div class="add-server-box">
+                            <input type="text" id="newChromaUrl" class="input-field" placeholder="输入服务器地址 (如 http://192.168.1.8:8000)">
+                            <button id="addChromaServerBtn" class="btn btn-secondary btn-sm">
+                                <span class="btn-icon">➕</span>
+                                添加
+                            </button>
+                        </div>
+                        <div id="chromaServerList" class="server-list"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="embeddingModel">嵌入模型</label>
+                        <div class="select-with-action">
+                            <select id="embeddingModel" class="input-field">
+                                <option value="">选择模型...</option>
+                                <option value="nomic-embed-text">nomic-embed-text</option>
+                                <option value="all-minilm">all-minilm</option>
+                                <option value="custom">自定义</option>
+                            </select>
+                            <button id="loadModelsBtn" class="btn btn-secondary btn-sm">
+                                <span class="btn-icon">🔄</span>
+                                加载模型
+                            </button>
+                        </div>
+                        <small>选择用于生成向量的嵌入模型，点击"加载模型"获取可用模型列表</small>
+                    </div>
+                    
+                    <div class="form-group" id="customModelGroup" style="display: none;">
+                        <label for="customModel">自定义模型名称</label>
+                        <input type="text" id="customModel" class="input-field" placeholder="输入自定义模型名称">
+                    </div>
+                    
+                    <button id="saveSettingsBtn" class="btn btn-primary">
+                        <span class="btn-icon">💾</span>
+                        保存设置
+                    </button>
+                    
+                    <button id="resetSettingsBtn" class="btn btn-secondary">
+                        <span class="btn-icon">↩️</span>
+                        重置默认
+                    </button>
+                </div>
+                
+                <div id="settingsStatus" class="status hidden">
+                    <div class="status-message"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模态框：重命名集合 -->
+    <div id="renameCollectionModal" class="modal hidden">
+        <div class="modal-content">
+            <h3>重命名集合</h3>
+            <div class="form-group">
+                <label for="newCollectionNameInput">新名称</label>
+                <input type="text" id="newCollectionNameInput" class="input-field" placeholder="输入新的集合名称">
+            </div>
+            <div class="modal-actions">
+                <button id="cancelRenameBtn" class="btn btn-secondary">取消</button>
+                <button id="confirmRenameBtn" class="btn btn-primary">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../utils/storage.js"></script>
+    <script src="../utils/ollama-client.js"></script>
+    <script src="../utils/chromadb-client.js"></script>
+    <script src="../utils/html-cleaner.js"></script>
+    <script src="popup.js"></script>
+</body>
+</html>
