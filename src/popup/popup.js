@@ -58,9 +58,8 @@ const elements = {
     uploadServer: document.getElementById('uploadServer'),
     uploadCollection: document.getElementById('uploadCollection'),
     fileInput: document.getElementById('fileInput'),
-    filePreview: document.getElementById('filePreview'),
-    fileName: document.getElementById('fileName'),
-    fileSize: document.getElementById('fileSize'),
+    dropZone: document.getElementById('dropZone'),
+    fileList: document.getElementById('fileList'),
     uploadBtn: document.getElementById('uploadBtn'),
     uploadStatus: document.getElementById('uploadStatus'),
     removeDuplicatesBtn: document.getElementById('removeDuplicatesBtn'),
@@ -101,6 +100,9 @@ let selectedSearchCollectionsByServer = {};
 // 当前选中的集合（用于显示）
 let selectedCaptureCollections = [];
 let selectedSearchCollections = [];
+
+// 待上传文件列表
+let uploadFiles = [];
 
 // 初始化
 document.addEventListener('DOMContentLoaded', async () => {
@@ -348,16 +350,7 @@ function setupEventListeners() {
     elements.uploadServer.addEventListener('change', (e) => {
         loadCollectionsForUploadServer(e.target.value);
     });
-    elements.fileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            elements.filePreview.classList.remove('hidden');
-            elements.fileName.textContent = file.name;
-            elements.fileSize.textContent = formatFileSize(file.size);
-        } else {
-            elements.filePreview.classList.add('hidden');
-        }
-    });
+    setupDropZone();
     elements.uploadBtn.addEventListener('click', uploadFile);
 }
 
@@ -1939,105 +1932,218 @@ function generateFileChunkId(fileName, chunkIndex) {
 }
 
 /**
- * 上传并嵌入文件
+ * 读取文件内容（自动判断 PDF vs 文本）
+ */
+async function readFileContent(file, onProgress) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext === 'pdf') {
+        if (!window.PdfReader) throw new Error('PDF 解析器未加载');
+        return await window.PdfReader.extractText(file, onProgress);
+    }
+    return await readFileAsText(file);
+}
+
+// ── Drop zone 拖拽上传 ────────────────────────────────────────────────
+
+function setupDropZone() {
+    const zone = elements.dropZone;
+    if (!zone) return;
+
+    zone.addEventListener('dragenter', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.add('drag-over');
+    });
+    zone.addEventListener('dragover', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.add('drag-over');
+    });
+    zone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        if (!zone.contains(e.relatedTarget)) zone.classList.remove('drag-over');
+    });
+    zone.addEventListener('drop', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.remove('drag-over');
+        addFilesToQueue(e.dataTransfer.files);
+    });
+    zone.addEventListener('click', (e) => {
+        if (!e.target.closest('.file-item-remove')) elements.fileInput.click();
+    });
+    elements.fileInput.addEventListener('change', (e) => {
+        addFilesToQueue(e.target.files);
+        elements.fileInput.value = '';
+    });
+}
+
+const UPLOAD_ALLOWED_EXTS = ['.txt', '.md', '.csv', '.json', '.html', '.htm', '.pdf'];
+
+function addFilesToQueue(newFiles) {
+    Array.from(newFiles).forEach(file => {
+        const ext = '.' + file.name.split('.').pop().toLowerCase();
+        if (!UPLOAD_ALLOWED_EXTS.includes(ext)) {
+            console.warn(`不支持的文件格式: ${file.name}`);
+            return;
+        }
+        const isDuplicate = uploadFiles.some(f => f.name === file.name && f.size === file.size);
+        if (!isDuplicate) uploadFiles.push(file);
+    });
+    renderFileList();
+}
+
+function renderFileList() {
+    if (uploadFiles.length === 0) {
+        elements.fileList.innerHTML = '';
+        elements.fileList.classList.add('hidden');
+        return;
+    }
+    elements.fileList.classList.remove('hidden');
+    elements.fileList.innerHTML = uploadFiles.map((file, idx) => {
+        const ext = file.name.split('.').pop().toLowerCase();
+        const icon = ext === 'pdf' ? '📕' : '📄';
+        return `
+            <div class="file-list-item">
+                <span class="file-item-icon">${icon}</span>
+                <span class="file-item-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+                <span class="file-item-size">${formatFileSize(file.size)}</span>
+                <button class="file-item-remove" data-idx="${idx}" title="移除">✕</button>
+            </div>
+        `;
+    }).join('');
+    elements.fileList.querySelectorAll('.file-item-remove').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            uploadFiles.splice(parseInt(btn.dataset.idx), 1);
+            renderFileList();
+        });
+    });
+}
+
+/**
+ * 上传并嵌入文件（支持多文件和 PDF）
  */
 async function uploadFile() {
+    if (uploadFiles.length === 0) {
+        showStatus(elements.uploadStatus, '请先选择要上传的文件', 'warning');
+        return;
+    }
+
+    const serverUrl = elements.uploadServer.value.trim();
+    if (!serverUrl) { showStatus(elements.uploadStatus, '请先选择服务器', 'warning'); return; }
+
+    const collectionName = elements.uploadCollection.value.trim();
+    if (!collectionName) { showStatus(elements.uploadStatus, '请先选择集合', 'warning'); return; }
+
+    const model = currentSettings.embeddingModel === 'custom'
+        ? currentSettings.customModel
+        : currentSettings.embeddingModel;
+
+    elements.uploadBtn.disabled = true;
+    let totalSaved = 0;
+    const failedFiles = [];
+
     try {
-        const serverUrl = elements.uploadServer.value.trim();
-        if (!serverUrl) throw new Error('请先选择服务器');
+        for (let fileIdx = 0; fileIdx < uploadFiles.length; fileIdx++) {
+            const file = uploadFiles[fileIdx];
+            const isPdf = file.name.split('.').pop().toLowerCase() === 'pdf';
 
-        const collectionName = elements.uploadCollection.value.trim();
-        if (!collectionName) throw new Error('请先选择集合');
+            try {
+                showProgress(elements.uploadStatus,
+                    `(文件 ${fileIdx + 1}/${uploadFiles.length}) 读取: ${file.name}`);
+                updateProgress(elements.uploadStatus,
+                    Math.round((fileIdx / uploadFiles.length) * 10));
 
-        const file = elements.fileInput.files[0];
-        if (!file) throw new Error('请选择要上传的文件');
+                let content;
+                if (isPdf) {
+                    content = await readFileContent(file, (pageNum, total) => {
+                        showProgress(elements.uploadStatus,
+                            `(文件 ${fileIdx + 1}/${uploadFiles.length}) 解析 PDF: 第 ${pageNum}/${total} 页`);
+                    });
+                } else {
+                    content = await readFileContent(file);
+                }
 
-        elements.uploadBtn.disabled = true;
-        showProgress(elements.uploadStatus, '正在读取文件...');
-        updateProgress(elements.uploadStatus, 5);
+                if (!content || content.trim().length === 0) {
+                    failedFiles.push(`${file.name} (内容为空)`);
+                    continue;
+                }
 
-        const content = await readFileAsText(file);
-        if (!content || content.trim().length === 0) {
-            throw new Error('文件内容为空');
-        }
+                const chunks = splitIntoChunks(content, 4000, 200);
 
-        const chunks = splitIntoChunks(content, 4000, 200);
-        console.log(`文件分块数: ${chunks.length}`);
+                // Duplicate check
+                showProgress(elements.uploadStatus,
+                    `(文件 ${fileIdx + 1}/${uploadFiles.length}) 检查重复: ${file.name}`);
+                const firstChunkId = generateFileChunkId(file.name, 0);
+                const exists = await ChromaDBClient.checkDocumentExists(serverUrl, collectionName, firstChunkId);
 
-        // Check if first chunk already exists (duplicate file detection)
-        showProgress(elements.uploadStatus, '正在检查重复内容...');
-        const firstChunkId = generateFileChunkId(file.name, 0);
-        const firstChunkExists = await ChromaDBClient.checkDocumentExists(serverUrl, collectionName, firstChunkId);
+                let useUpsert = false;
+                if (exists) {
+                    useUpsert = confirm(
+                        `文件 "${file.name}" 已存在于集合 "${collectionName}" 中。\n\n点击"确定"更新已有内容，点击"取消"跳过该文件。`
+                    );
+                    if (!useUpsert) continue;
+                }
 
-        let useUpsert = false;
-        if (firstChunkExists) {
-            useUpsert = confirm(
-                `文件 "${file.name}" 已存在于集合 "${collectionName}" 中。\n\n点击"确定"更新已有内容，点击"取消"取消上传。`
-            );
-            if (!useUpsert) {
-                hideProgress(elements.uploadStatus);
-                showStatus(elements.uploadStatus, '已取消：文件已存在于集合中', 'warning');
-                return;
+                // Embed & save each chunk
+                for (let i = 0; i < chunks.length; i++) {
+                    const overallPct = Math.round(
+                        ((fileIdx + (i + 1) / chunks.length) / uploadFiles.length) * 85 + 10
+                    );
+                    showProgress(elements.uploadStatus,
+                        chunks.length > 1
+                            ? `(文件 ${fileIdx + 1}/${uploadFiles.length}) ${file.name}: 嵌入第 ${i + 1}/${chunks.length} 块`
+                            : `(文件 ${fileIdx + 1}/${uploadFiles.length}) 生成嵌入: ${file.name}`
+                    );
+                    updateProgress(elements.uploadStatus, overallPct);
+
+                    const chunkId = generateFileChunkId(file.name, i);
+                    const embedding = await OllamaClient.generateEmbedding(
+                        currentSettings.ollamaUrl, chunks[i], model
+                    );
+                    const doc = {
+                        id: chunkId,
+                        content: chunks[i],
+                        metadata: {
+                            source: file.name,
+                            url: `file://${file.name}`,
+                            title: file.name,
+                            chunk: i,
+                            totalChunks: chunks.length,
+                            fileType: isPdf ? 'pdf' : 'text',
+                            timestamp: new Date().toISOString(),
+                            type: 'file'
+                        },
+                        embedding
+                    };
+                    if (useUpsert) {
+                        await ChromaDBClient.upsertDocument(serverUrl, collectionName, doc);
+                    } else {
+                        await ChromaDBClient.addDocument(serverUrl, collectionName, doc);
+                    }
+                    totalSaved++;
+                }
+            } catch (fileErr) {
+                console.error(`处理文件 ${file.name} 失败:`, fileErr);
+                failedFiles.push(`${file.name} (${fileErr.message})`);
             }
-        }
-
-        const model = currentSettings.embeddingModel === 'custom'
-            ? currentSettings.customModel
-            : currentSettings.embeddingModel;
-
-        let savedCount = 0;
-        for (let i = 0; i < chunks.length; i++) {
-            const progressPct = Math.round(10 + (i / chunks.length) * 85);
-            showProgress(elements.uploadStatus,
-                chunks.length > 1
-                    ? `正在处理第 ${i + 1}/${chunks.length} 块...`
-                    : '正在生成向量嵌入...'
-            );
-            updateProgress(elements.uploadStatus, progressPct);
-
-            const chunkId = generateFileChunkId(file.name, i);
-            const embedding = await OllamaClient.generateEmbedding(
-                currentSettings.ollamaUrl,
-                chunks[i],
-                model
-            );
-
-            const doc = {
-                id: chunkId,
-                content: chunks[i],
-                metadata: {
-                    source: file.name,
-                    url: `file://${file.name}`,
-                    title: file.name,
-                    chunk: i,
-                    totalChunks: chunks.length,
-                    timestamp: new Date().toISOString(),
-                    type: 'file'
-                },
-                embedding
-            };
-
-            if (useUpsert) {
-                await ChromaDBClient.upsertDocument(serverUrl, collectionName, doc);
-            } else {
-                await ChromaDBClient.addDocument(serverUrl, collectionName, doc);
-            }
-            savedCount++;
         }
 
         updateProgress(elements.uploadStatus, 100);
         hideProgress(elements.uploadStatus);
-        const chunkInfo = chunks.length > 1 ? `（共 ${chunks.length} 块）` : '';
-        showStatus(elements.uploadStatus,
-            `文件上传成功！已保存 ${savedCount} 条内容${chunkInfo}`,
-            'success'
-        );
 
-        // Reset file input
+        if (failedFiles.length === 0) {
+            showStatus(elements.uploadStatus,
+                `全部完成！共保存 ${totalSaved} 条内容（${uploadFiles.length} 个文件）`, 'success');
+        } else {
+            showStatus(elements.uploadStatus,
+                `完成！已保存 ${totalSaved} 条。失败: ${failedFiles.join('; ')}`, 'warning');
+        }
+
+        // Reset queue
+        uploadFiles = [];
         elements.fileInput.value = '';
-        elements.filePreview.classList.add('hidden');
+        renderFileList();
     } catch (error) {
-        console.error('文件上传失败:', error);
+        console.error('上传失败:', error);
         hideProgress(elements.uploadStatus);
         showStatus(elements.uploadStatus, `上传失败: ${error.message}`, 'error');
     } finally {
