@@ -1,5 +1,222 @@
 # Ollama Vector Database Extension
 
+一个功能完整的 Chrome 浏览器扩展，将**本地 Ollama 嵌入模型**与 **ChromaDB 向量数据库**结合，实现网页内容捕获、本地文件上传、语义搜索与集合管理，全程无需云服务，数据完全本地化。
+
+---
+
+## ✨ 功能概览
+
+| 标签页 | 功能 |
+|------|------|
+| **捕获** | 一键抓取当前页面或选中文字，向量化后存入多个集合 |
+| **搜索** | 向量语义搜索，结果附带可点击链接和内容摘要片段 |
+| **上传** | 拖拽或多选本地文件批量嵌入，支持 PDF / TXT / MD / CSV / JSON / HTML |
+| **管理** | 集合创建、重命名、删除，文档管理，一键去重 |
+| **设置** | 多 ChromaDB 服务器、Ollama 地址、嵌入模型配置 |
+
+**亮点特性**
+
+- 🔁 **重复检测** — 捕获/上传前自动检测已有内容，提示覆盖或跳过
+- 🗂️ **多集合** — 捕获和搜索均支持同时选择多个集合
+- 📄 **PDF 支持** — 内置 PDF.js，逐页提取文本并自动分块嵌入
+- 🖱️ **拖拽上传** — 直接将文件拖入上传区域，支持批量队列管理
+- 🔍 **摘要控制** — 搜索结果显示内容片段，可自定义字数（默认 300 字）
+- 🌐 **多服务器** — 可添加任意数量的 ChromaDB 服务器并随时切换
+- 🧹 **去重清理** — 管理界面一键扫描并删除集合中的重复文档
+
+---
+
+## 📋 依赖服务
+
+### 1. Ollama（本地嵌入模型）
+
+```bash
+# 访问 https://ollama.ai 下载安装
+
+# ⚠️ 必须在启动前设置此变量，Chrome 扩展才能访问（CORS）
+# Linux / macOS
+export OLLAMA_ORIGINS=*
+ollama serve
+
+# Windows PowerShell
+$env:OLLAMA_ORIGINS="*"; ollama serve
+
+# Windows CMD
+set OLLAMA_ORIGINS=* && ollama serve
+
+# 拉取推荐的嵌入模型
+ollama pull nomic-embed-text
+```
+
+> 如果不设置 `OLLAMA_ORIGINS=*`，扩展连接 Ollama 时会出现 CORS 错误。
+
+### 2. ChromaDB（向量数据库）
+
+```bash
+# Docker（推荐）
+docker run -p 8000:8000 chromadb/chroma
+
+# 或 Python
+pip install chromadb
+chroma run --host localhost --port 8000
+```
+
+---
+
+## 🚀 安装扩展
+
+1. 克隆或下载本项目
+2. 打开 Chrome，访问 `chrome://extensions/`
+3. 启用右上角**开发者模式**
+4. 点击**加载已解压的扩展程序**，选择项目的 `src/` 目录
+5. 工具栏出现扩展图标即安装成功
+
+---
+
+## ⚙️ 首次配置
+
+1. 点击扩展图标 → **设置**标签页
+2. 输入 Ollama 地址（默认 `http://localhost:11434`），点击**测试**
+3. 点击**加载模型**，从下拉列表中选择嵌入模型（推荐 `nomic-embed-text`）
+4. 添加 ChromaDB 服务器地址（默认 `http://localhost:8000`），点击**测试**
+5. 点击**保存设置**
+
+> **ChromaDB 路径说明**：扩展固定使用 `default_tenant` / `default_database`，对应 API 路径 `api/v2/tenants/default_tenant/databases/default_database/...`。如需修改请编辑 `src/utils/chromadb-client.js`。
+
+---
+
+## 📖 使用指南
+
+### 捕获网页
+
+1. 打开目标页面
+2. 点击扩展图标 → **捕获**标签
+3. 选择服务器和集合（支持多选）
+4. 点击**捕获当前页面**或**捕获选中内容**
+5. 若该页面已存在，将弹窗询问是否覆盖更新
+
+### 语义搜索
+
+1. **搜索**标签 → 选择服务器和集合
+2. 输入自然语言查询，按 Enter 或点击搜索
+3. 结果按向量距离排序，网页 URL 可直接点击打开
+4. 可在"摘要字数"输入框调整每条结果显示的内容长度
+
+### 上传本地文件
+
+1. **上传**标签 → 选择服务器和集合
+2. 将文件**拖入拖放区**，或点击区域选择文件（支持多选）
+3. 支持格式：`.pdf` `.txt` `.md` `.csv` `.json` `.html`
+4. 确认文件队列后点击**上传并嵌入**
+5. 大文件自动分块处理（每块 4000 字符，重叠 200 字符）；PDF 逐页提取文本
+
+### 集合管理
+
+- **管理**标签 → 选择服务器 → **刷新集合列表**
+- **创建** / **重命名** / **删除**集合
+- 选择集合后可查看所有文档，支持单条删除或**清空所有**
+- 点击**删除重复**：自动扫描同来源的重复文档，保留最新版本并删除旧版本
+
+---
+
+## 🏗️ 项目结构
+
+```
+chrome-extension-ollama-vector-db/
+├── src/
+│   ├── manifest.json
+│   ├── popup/
+│   │   ├── popup.html          # UI 结构（5个标签页）
+│   │   ├── popup.css           # 样式
+│   │   └── popup.js            # 全部交互逻辑
+│   ├── content-scripts/
+│   │   └── content-script.js   # 页面内容提取
+│   ├── background/
+│   │   └── background.js       # Service Worker
+│   ├── utils/
+│   │   ├── ollama-client.js    # Ollama REST API 封装
+│   │   ├── chromadb-client.js  # ChromaDB REST API 封装
+│   │   ├── html-cleaner.js     # HTML → 纯文本清理
+│   │   ├── storage.js          # Chrome Storage 封装
+│   │   ├── pdf-reader.js       # PDF 文本提取（基于 PDF.js）
+│   │   ├── pdf.min.mjs         # PDF.js 库（pdfjs-dist 5.6）
+│   │   └── pdf.worker.min.mjs  # PDF.js Worker
+│   └── icons/
+│       ├── icon16.png
+│       ├── icon48.png
+│       └── icon128.png
+├── docs/
+├── api/
+└── README.md
+```
+
+---
+
+## 🔧 核心模块说明
+
+### `chromadb-client.js`
+
+| 方法 | 说明 |
+|------|------|
+| `getCollections(url)` | 获取集合列表 |
+| `createCollection(url, name)` | 创建集合 |
+| `deleteCollection(url, name)` | 删除集合 |
+| `addDocument(url, col, doc)` | 添加文档（含嵌入向量） |
+| `upsertDocument(url, col, doc)` | 更新或插入文档 |
+| `checkDocumentExists(url, col, id)` | 检查文档是否存在 |
+| `queryDocuments(url, col, query)` | 向量相似度查询 |
+| `getDocuments(url, col, opts)` | 获取集合内文档列表 |
+| `deleteDocument(url, col, id)` | 删除单条文档 |
+| `findDuplicates(url, col)` | 按来源分组查找重复文档 |
+
+### `pdf-reader.js`
+
+懒加载 PDF.js（`pdf.min.mjs`），首次处理 PDF 时动态 `import()`，后续复用同一实例。提取时保留页码标注和换行信息。
+
+---
+
+## 🔍 常见问题
+
+### 无法连接 Ollama
+```
+错误: CORS policy / Connection refused
+```
+- 确认已设置 `OLLAMA_ORIGINS=*` **后再**运行 `ollama serve`
+- 检查 Ollama 是否运行：`curl http://localhost:11434/api/tags`
+- 检查模型是否安装：`ollama list`
+
+### 无法连接 ChromaDB
+```
+错误: Failed to fetch / HTTP 404
+```
+- 确认服务正在运行：`curl http://localhost:8000/api/v2/heartbeat`
+- Docker 用户确认端口映射：`docker ps`
+
+### PDF 上传失败
+- 确认扩展已重新加载（`chrome://extensions/` → 刷新）
+- 检查 PDF 是否为扫描件（纯图片 PDF 无可提取文字）
+- 查看浏览器控制台（F12）中的详细错误
+
+### 搜索结果为空
+- 确认已选择正确的集合和服务器
+- 确认嵌入模型与捕获时使用的模型一致
+- 先到**管理**标签确认集合中有内容
+
+---
+
+## 🛡️ 隐私说明
+
+- 所有数据处理**完全在本地完成**，不发送任何内容到外部服务器
+- 网页内容存储在您自己的 ChromaDB 实例中
+- 嵌入向量由本地 Ollama 模型生成
+
+---
+
+## 📄 许可证
+
+MIT License
+
+
 一个功能强大的 Chrome 浏览器扩展，用于捕获网页内容，通过本地 Ollama API 进行向量化，并存储到 ChromaDB 向量数据库中。支持语义搜索、内容管理和多服务器配置。
 
 ## ✨ 功能特性
