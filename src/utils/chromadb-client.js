@@ -520,6 +520,121 @@ const ChromaDBClient = {
     },
 
     /**
+     * 检查文档是否已存在
+     * @param {string} baseUrl - ChromaDB 服务器基础 URL
+     * @param {string} collectionName - 集合名称
+     * @param {string} docId - 文档 ID
+     * @returns {Promise<boolean>} 是否存在
+     */
+    async checkDocumentExists(baseUrl, collectionName, docId) {
+        if (!baseUrl || !collectionName || !docId) return false;
+        try {
+            const collectionId = await this.getCollectionId(baseUrl, collectionName);
+            if (!collectionId) return false;
+
+            const url = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+            const endpoint = `${url}api/v2/tenants/default_tenant/databases/default_database/collections/${collectionId}/get`;
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: [docId] })
+            });
+
+            if (!response.ok) return false;
+
+            const data = await response.json();
+            return !!(data && data.ids && data.ids.length > 0);
+        } catch (error) {
+            console.error('检查文档存在失败:', error);
+            return false;
+        }
+    },
+
+    /**
+     * 更新或插入文档 (upsert)
+     * @param {string} baseUrl - ChromaDB 服务器基础 URL
+     * @param {string} collectionName - 集合名称
+     * @param {Object} document - 文档对象 { id, content, metadata, embedding }
+     * @returns {Promise<string>} 文档 ID
+     */
+    async upsertDocument(baseUrl, collectionName, document) {
+        if (!baseUrl) throw new Error('ChromaDB 服务器地址未配置');
+        if (!collectionName) throw new Error('集合名称未指定');
+        if (!document || !document.id || !document.content || !document.embedding) {
+            throw new Error('文档数据无效');
+        }
+
+        try {
+            const collectionId = await this.getCollectionId(baseUrl, collectionName);
+            if (!collectionId) throw new Error(`集合 ${collectionName} 不存在`);
+
+            const url = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+            const endpoint = `${url}api/v2/tenants/default_tenant/databases/default_database/collections/${collectionId}/upsert`;
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ids: [document.id],
+                    documents: [document.content],
+                    metadatas: [document.metadata],
+                    embeddings: [document.embedding]
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`ChromaDB API 错误 (${response.status}): ${errorText}`);
+            }
+
+            return document.id;
+        } catch (error) {
+            console.error('Upsert 文档失败:', error);
+            throw new Error(`更新文档失败: ${error.message}`);
+        }
+    },
+
+    /**
+     * 查找集合中的重复文档（按 URL/来源 分组）
+     * @param {string} baseUrl - ChromaDB 服务器基础 URL
+     * @param {string} collectionName - 集合名称
+     * @returns {Promise<{urlGroups: Map, totalDuplicates: number}>}
+     */
+    async findDuplicates(baseUrl, collectionName) {
+        if (!baseUrl) throw new Error('ChromaDB 服务器地址未配置');
+        if (!collectionName) throw new Error('集合名称未指定');
+
+        const results = await this.getDocuments(baseUrl, collectionName, { limit: 10000 });
+        if (!results || !results.ids || results.ids.length === 0) {
+            return { urlGroups: new Map(), totalDuplicates: 0 };
+        }
+
+        // Group documents by source URL (or by id prefix for file chunks)
+        const urlGroups = new Map();
+        results.ids.forEach((id, index) => {
+            const metadata = (results.metadatas && results.metadatas[index]) || {};
+            const sourceKey = metadata.url || metadata.source || id;
+            if (!urlGroups.has(sourceKey)) {
+                urlGroups.set(sourceKey, []);
+            }
+            urlGroups.get(sourceKey).push({ id, metadata });
+        });
+
+        // Keep only groups with more than one document
+        let totalDuplicates = 0;
+        for (const [sourceKey, docs] of urlGroups.entries()) {
+            if (docs.length <= 1) {
+                urlGroups.delete(sourceKey);
+            } else {
+                totalDuplicates += docs.length - 1;
+            }
+        }
+
+        return { urlGroups, totalDuplicates };
+    },
+
+    /**
      * 获取集合列表
      * @param {string} baseUrl - ChromaDB 服务器基础 URL
      * @returns {Promise<Array>} 集合列表

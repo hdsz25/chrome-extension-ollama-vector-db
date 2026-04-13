@@ -25,6 +25,7 @@ const elements = {
     searchBtn: document.getElementById('searchBtn'),
     searchResults: document.getElementById('searchResults'),
     resultsList: document.querySelector('.results-list'),
+    snippetLength: document.getElementById('snippetLength'),
     refreshBtn: document.getElementById('refreshBtn'),
     clearAllBtn: document.getElementById('clearAllBtn'),
     manageList: document.getElementById('manageList'),
@@ -54,6 +55,15 @@ const elements = {
     captureServer: document.getElementById('captureServer'),
     captureServerUrl: document.getElementById('captureServerUrl'),
     captureCollection: document.getElementById('captureCollection'),
+    uploadServer: document.getElementById('uploadServer'),
+    uploadCollection: document.getElementById('uploadCollection'),
+    fileInput: document.getElementById('fileInput'),
+    filePreview: document.getElementById('filePreview'),
+    fileName: document.getElementById('fileName'),
+    fileSize: document.getElementById('fileSize'),
+    uploadBtn: document.getElementById('uploadBtn'),
+    uploadStatus: document.getElementById('uploadStatus'),
+    removeDuplicatesBtn: document.getElementById('removeDuplicatesBtn'),
     captureCollectionDisplay: document.getElementById('captureCollectionDisplay'),
     captureCollectionText: document.getElementById('captureCollectionText'),
     captureCollectionCount: document.getElementById('captureCollectionCount'),
@@ -83,7 +93,12 @@ let chromaCollectionsByServer = {};
 // 当前正在重命名的集合
 let currentRenameCollection = null;
 
-// 选中的集合（用于捕获和搜索）
+// 选中的集合（按服务器分组存储，用于捕获和搜索）
+// 格式: { serverUrl: ['collection1', 'collection2'] }
+let selectedCaptureCollectionsByServer = {};
+let selectedSearchCollectionsByServer = {};
+
+// 当前选中的集合（用于显示）
 let selectedCaptureCollections = [];
 let selectedSearchCollections = [];
 
@@ -161,6 +176,11 @@ function refreshAllServerSelectors(selectedUrl) {
             elements.searchServerUrl.textContent = selectedUrl;
         }
     }
+
+    // 更新上传页面
+    if (elements.uploadServer) {
+        elements.uploadServer.value = selectedUrl;
+    }
     
     console.log('所有服务器选择器已刷新');
 }
@@ -173,6 +193,7 @@ function loadChromaServersToManage() {
     elements.manageServerSelect.innerHTML = '<option value="">选择服务器...</option>';
     elements.captureServer.innerHTML = '<option value="">选择服务器...</option>';
     elements.searchServer.innerHTML = '<option value="">选择服务器...</option>';
+    elements.uploadServer.innerHTML = '<option value="">选择服务器...</option>';
     
     chromaServers.forEach(server => {
         // 管理页面
@@ -201,6 +222,15 @@ function loadChromaServersToManage() {
             searchOption.selected = true;
         }
         elements.searchServer.appendChild(searchOption);
+
+        // 上传页面
+        const uploadOption = document.createElement('option');
+        uploadOption.value = server.url;
+        uploadOption.textContent = server.name;
+        if (server.url === currentSettings.chromaUrl) {
+            uploadOption.selected = true;
+        }
+        elements.uploadServer.appendChild(uploadOption);
     });
     
     console.log('loadChromaServersToManage - 选项数量:', elements.manageServerSelect.options.length);
@@ -209,6 +239,7 @@ function loadChromaServersToManage() {
     if (currentSettings.chromaUrl) {
         updateCollectionsForServer('capture', currentSettings.chromaUrl);
         updateCollectionsForServer('search', currentSettings.chromaUrl);
+        loadCollectionsForUploadServer(currentSettings.chromaUrl);
     }
 }
 
@@ -232,6 +263,7 @@ function setupEventListeners() {
     // 管理按钮
     elements.loadCollectionsBtn.addEventListener('click', loadChromaCollections);
     elements.createCollectionBtn.addEventListener('click', createChromaCollection);
+    elements.removeDuplicatesBtn.addEventListener('click', removeDuplicates);
     elements.manageCollectionSelect.addEventListener('change', (e) => {
         if (e.target.value) {
             loadContentList(e.target.value);
@@ -311,6 +343,22 @@ function setupEventListeners() {
     
     // 模型加载
     elements.loadModelsBtn.addEventListener('click', loadOllamaModels);
+
+    // 上传标签页
+    elements.uploadServer.addEventListener('change', (e) => {
+        loadCollectionsForUploadServer(e.target.value);
+    });
+    elements.fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            elements.filePreview.classList.remove('hidden');
+            elements.fileName.textContent = file.name;
+            elements.fileSize.textContent = formatFileSize(file.size);
+        } else {
+            elements.filePreview.classList.add('hidden');
+        }
+    });
+    elements.uploadBtn.addEventListener('click', uploadFile);
 }
 
 // 切换标签页
@@ -518,28 +566,31 @@ async function removeChromaServer(index) {
     await chrome.storage.local.set({ chromaServers });
 
     // 从分组中移除该服务器的集合
-    delete chromaCollectionsByServer[server.url];
-
-    // 更新全局集合列表
-    chromaCollections = Object.values(chromaCollectionsByServer).flat();
-
-    // 更新 UI
-    updateChromaServerUI();
-
-    // 更新管理页面的服务器选择器
-    loadChromaServersToManage();
-
-    // 更新捕获和搜索页面的多选下拉框
-    updateMultiSelectDropdown('capture', chromaCollections);
-    updateMultiSelectDropdown('search', chromaCollections);
-
-    // 清空该服务器集合的选择
-    selectedCaptureCollections = [];
-    selectedSearchCollections = [];
-    updateMultiSelectDisplay('capture');
-    updateMultiSelectDisplay('search');
-    saveSelectedCollections();
-
+            delete chromaCollectionsByServer[server.url];
+    
+            // 删除该服务器的选择记录
+            delete selectedCaptureCollectionsByServer[server.url];
+            delete selectedSearchCollectionsByServer[server.url];
+    
+            // 更新全局集合列表
+            chromaCollections = Object.values(chromaCollectionsByServer).flat();
+    
+            // 更新 UI
+            updateChromaServerUI();
+    
+            // 更新管理页面的服务器选择器
+            loadChromaServersToManage();
+    
+            // 更新捕获和搜索页面的多选下拉框
+            updateMultiSelectDropdown('capture', chromaCollections);
+            updateMultiSelectDropdown('search', chromaCollections);
+    
+            // 清空该服务器集合的选择
+            selectedCaptureCollections = [];
+            selectedSearchCollections = [];
+            updateMultiSelectDisplay('capture');
+            updateMultiSelectDisplay('search');
+            saveSelectedCollections();
     // 如果删除的是当前选中的服务器，选择第一个服务器
     if (server.url === currentSettings.chromaUrl && chromaServers.length > 0) {
         elements.chromaUrlSelect.value = chromaServers[0].url;
@@ -580,6 +631,11 @@ async function loadChromaCollections() {
         // 更新多选下拉框（显示所有服务器的集合）
         updateMultiSelectDropdown('capture', chromaCollections);
         updateMultiSelectDropdown('search', chromaCollections);
+
+        // 同步上传页面的集合列表
+        if (elements.uploadServer && elements.uploadServer.value) {
+            loadCollectionsForUploadServer(elements.uploadServer.value);
+        }
     } catch (error) {
         console.error('加载集合失败:', error);
         elements.collectionList.innerHTML = `<div class="error">加载失败: ${error.message}</div>`;
@@ -788,7 +844,20 @@ async function deleteChromaCollection(serverUrl, collectionName) {
         updateMultiSelectDropdown('capture', chromaCollections);
         updateMultiSelectDropdown('search', chromaCollections);
 
-        // 清空被删除集合的选择
+        // 同步上传页面的集合列表
+        if (elements.uploadServer && elements.uploadServer.value) {
+            loadCollectionsForUploadServer(elements.uploadServer.value);
+        }
+
+        // 清空被删除集合的选择（从按服务器分组的选择中移除）
+        if (selectedCaptureCollectionsByServer[serverUrl]) {
+            selectedCaptureCollectionsByServer[serverUrl] = selectedCaptureCollectionsByServer[serverUrl].filter(c => c !== collectionName);
+        }
+        if (selectedSearchCollectionsByServer[serverUrl]) {
+            selectedSearchCollectionsByServer[serverUrl] = selectedSearchCollectionsByServer[serverUrl].filter(c => c !== collectionName);
+        }
+
+        // 更新当前选择
         selectedCaptureCollections = selectedCaptureCollections.filter(c => c !== collectionName);
         selectedSearchCollections = selectedSearchCollections.filter(c => c !== collectionName);
         updateMultiSelectDisplay('capture');
@@ -930,13 +999,33 @@ async function updateCollectionsForServer(type, serverUrl) {
 
     // 检查是否已经加载了该服务器的集合
     if (chromaCollectionsByServer[serverUrl]) {
-        updateMultiSelectDropdown(type, chromaCollectionsByServer[serverUrl]);
-        // 清空之前的选择（因为切换了服务器）
+        const collections = chromaCollectionsByServer[serverUrl];
+        updateMultiSelectDropdown(type, collections);
+
+        // 获取该服务器上次的选择
         if (type === 'capture') {
-            selectedCaptureCollections = [];
+            selectedCaptureCollections = selectedCaptureCollectionsByServer[serverUrl] || [];
         } else {
-            selectedSearchCollections = [];
+            selectedSearchCollections = selectedSearchCollectionsByServer[serverUrl] || [];
         }
+
+        // 过滤掉不存在的集合
+        const collectionNames = collections.map(c => c.name);
+        if (type === 'capture') {
+            selectedCaptureCollections = selectedCaptureCollections.filter(name => collectionNames.includes(name));
+        } else {
+            selectedSearchCollections = selectedSearchCollections.filter(name => collectionNames.includes(name));
+        }
+
+        // 如果没有选择且集合不为空，默认选择第一个
+        if ((type === 'capture' ? selectedCaptureCollections : selectedSearchCollections).length === 0 && collections.length > 0) {
+            if (type === 'capture') {
+                selectedCaptureCollections = [collections[0].name];
+            } else {
+                selectedSearchCollections = [collections[0].name];
+            }
+        }
+
         updateMultiSelectDisplay(type);
         saveSelectedCollections();
         return;
@@ -948,15 +1037,23 @@ async function updateCollectionsForServer(type, serverUrl) {
         chromaCollectionsByServer[serverUrl] = collections || [];
         updateMultiSelectDropdown(type, collections);
 
-        // 清空之前的选择（因为切换了服务器）
+        // 获取该服务器上次的选择
         if (type === 'capture') {
-            selectedCaptureCollections = [];
+            selectedCaptureCollections = selectedCaptureCollectionsByServer[serverUrl] || [];
         } else {
-            selectedSearchCollections = [];
+            selectedSearchCollections = selectedSearchCollectionsByServer[serverUrl] || [];
         }
 
-        // 如果有集合，默认选择第一个
-        if (collections && collections.length > 0) {
+        // 过滤掉不存在的集合
+        const collectionNames = collections.map(c => c.name);
+        if (type === 'capture') {
+            selectedCaptureCollections = selectedCaptureCollections.filter(name => collectionNames.includes(name));
+        } else {
+            selectedSearchCollections = selectedSearchCollections.filter(name => collectionNames.includes(name));
+        }
+
+        // 如果没有选择且集合不为空，默认选择第一个
+        if ((type === 'capture' ? selectedCaptureCollections : selectedSearchCollections).length === 0 && collections.length > 0) {
             if (type === 'capture') {
                 selectedCaptureCollections = [collections[0].name];
             } else {
@@ -1488,24 +1585,54 @@ async function capturePage() {
         updateProgress(elements.captureStatus, 70);
 
         // 存储到 ChromaDB（支持多个集合）
-        showProgress(elements.captureStatus, '正在存储到向量数据库...');
+        showProgress(elements.captureStatus, '正在检查重复内容...');
         const docId = generateDocId(tab.url);
-        
+
+        // Check for duplicate documents in each selected collection
+        const existingCollections = [];
         for (const collectionName of selectedCaptureCollections) {
-            await ChromaDBClient.addDocument(
-                serverUrl,
-                collectionName,
-                {
-                    id: docId,
-                    content: cleanedContent,
-                    metadata: {
-                        url: tab.url,
-                        title: tab.title,
-                        timestamp: new Date().toISOString()
-                    },
-                    embedding: embedding
-                }
+            try {
+                const exists = await ChromaDBClient.checkDocumentExists(serverUrl, collectionName, docId);
+                if (exists) existingCollections.push(collectionName);
+            } catch (e) {
+                console.warn(`检查集合 ${collectionName} 重复时出错:`, e);
+            }
+        }
+
+        let updateMode = false;
+        if (existingCollections.length > 0) {
+            const collectionsStr = existingCollections.join('、');
+            updateMode = confirm(
+                `检测到重复内容！\n该页面已存在于以下集合中：\n${collectionsStr}\n\n点击"确定"更新已有内容，点击"取消"仅保存到新集合。`
             );
+            // If all collections are duplicates and user chose not to update, abort
+            const newCollections = selectedCaptureCollections.filter(c => !existingCollections.includes(c));
+            if (!updateMode && newCollections.length === 0) {
+                hideProgress(elements.captureStatus);
+                showStatus(elements.captureStatus, '该页面已存在于所有选中的集合中，已取消保存', 'warning');
+                return;
+            }
+        }
+
+        showProgress(elements.captureStatus, '正在存储到向量数据库...');
+        for (const collectionName of selectedCaptureCollections) {
+            const isDuplicate = existingCollections.includes(collectionName);
+            if (isDuplicate && !updateMode) continue;
+            const saveDoc = {
+                id: docId,
+                content: cleanedContent,
+                metadata: {
+                    url: tab.url,
+                    title: tab.title,
+                    timestamp: new Date().toISOString()
+                },
+                embedding: embedding
+            };
+            if (isDuplicate) {
+                await ChromaDBClient.upsertDocument(serverUrl, collectionName, saveDoc);
+            } else {
+                await ChromaDBClient.addDocument(serverUrl, collectionName, saveDoc);
+            }
         }
         
         updateProgress(elements.captureStatus, 90);
@@ -1619,18 +1746,45 @@ function displaySearchResults(results) {
         return;
     }
 
-    elements.resultsList.innerHTML = results.map((result, index) => {
+    const snippetLen = parseInt((elements.snippetLength && elements.snippetLength.value) || '300', 10) || 300;
+
+    elements.resultsList.innerHTML = results.map((result) => {
         const distance = result.distance || 0;
+        const url = result.metadata.url || '';
+        const isWebUrl = url.startsWith('http://') || url.startsWith('https://');
+        const urlDisplay = url || '未知 URL';
+
+        // Build content snippet
+        const content = result.document || '';
+        const snippet = content.length > snippetLen
+            ? content.slice(0, snippetLen).trimEnd() + '…'
+            : content;
+
+        const urlHtml = isWebUrl
+            ? `<div class="result-url"><a class="result-url-link" href="#" data-url="${escapeHtml(url)}" title="${escapeHtml(url)}">${escapeHtml(urlDisplay)}</a></div>`
+            : `<div class="result-url">${escapeHtml(urlDisplay)}</div>`;
 
         return `
             <div class="result-item">
                 <div class="result-title">${escapeHtml(result.metadata.title || '无标题')}</div>
-                <div class="result-url">${escapeHtml(result.metadata.url || '未知 URL')}</div>
-                <div class="result-collection">集合: ${escapeHtml(result.collection)}</div>
-                <div class="result-score">余弦距离: ${distance.toFixed(4)}</div>
+                ${urlHtml}
+                <div class="result-meta-row">
+                    <span class="result-collection">集合: ${escapeHtml(result.collection)}</span>
+                    <span class="result-score">距离: ${distance.toFixed(4)}</span>
+                </div>
+                ${snippet ? `<div class="result-snippet">${escapeHtml(snippet)}</div>` : ''}
             </div>
         `;
     }).join('');
+
+    // Open URLs via chrome.tabs.create (required in extension popup)
+    elements.resultsList.querySelectorAll('.result-url-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const target = e.currentTarget.dataset.url;
+            if (target) chrome.tabs.create({ url: target });
+        });
+    });
 }
 
 // 清空所有内容
@@ -1700,6 +1854,260 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 window.removeChromaServer = removeChromaServer;
+
+// ── 上传标签页相关函数 ────────────────────────────────────────────────
+
+/**
+ * 加载指定服务器的集合到上传页面的下拉框
+ */
+async function loadCollectionsForUploadServer(serverUrl) {
+    elements.uploadCollection.innerHTML = '<option value="">加载中...</option>';
+    elements.uploadCollection.disabled = true;
+
+    if (!serverUrl) {
+        elements.uploadCollection.innerHTML = '<option value="">请先选择服务器...</option>';
+        elements.uploadCollection.disabled = false;
+        return;
+    }
+
+    try {
+        let collections = chromaCollectionsByServer[serverUrl];
+        if (!collections) {
+            collections = await ChromaDBClient.getCollections(serverUrl);
+            chromaCollectionsByServer[serverUrl] = collections || [];
+        }
+
+        elements.uploadCollection.innerHTML = '<option value="">选择集合...</option>';
+        (collections || []).forEach(col => {
+            const opt = document.createElement('option');
+            opt.value = col.name;
+            opt.textContent = col.name;
+            elements.uploadCollection.appendChild(opt);
+        });
+    } catch (error) {
+        console.error('加载上传集合失败:', error);
+        elements.uploadCollection.innerHTML = '<option value="">加载失败，请重试</option>';
+    } finally {
+        elements.uploadCollection.disabled = false;
+    }
+}
+
+/**
+ * 将大文本按字符数分块（带重叠）
+ */
+function splitIntoChunks(text, chunkSize = 4000, overlap = 200) {
+    if (text.length <= chunkSize) return [text];
+    const chunks = [];
+    let start = 0;
+    while (start < text.length) {
+        const end = Math.min(start + chunkSize, text.length);
+        chunks.push(text.slice(start, end));
+        if (end === text.length) break;
+        start = end - overlap;
+    }
+    return chunks;
+}
+
+/**
+ * 以 UTF-8 文本方式读取 File 对象
+ */
+function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = () => reject(new Error('读取文件失败'));
+        reader.readAsText(file, 'UTF-8');
+    });
+}
+
+/**
+ * 格式化文件大小显示
+ */
+function formatFileSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * 生成文件块文档 ID
+ */
+function generateFileChunkId(fileName, chunkIndex) {
+    return btoa(encodeURIComponent(`${fileName}-chunk-${chunkIndex}`))
+        .replace(/[/+=]/g, '')
+        .substring(0, 50);
+}
+
+/**
+ * 上传并嵌入文件
+ */
+async function uploadFile() {
+    try {
+        const serverUrl = elements.uploadServer.value.trim();
+        if (!serverUrl) throw new Error('请先选择服务器');
+
+        const collectionName = elements.uploadCollection.value.trim();
+        if (!collectionName) throw new Error('请先选择集合');
+
+        const file = elements.fileInput.files[0];
+        if (!file) throw new Error('请选择要上传的文件');
+
+        elements.uploadBtn.disabled = true;
+        showProgress(elements.uploadStatus, '正在读取文件...');
+        updateProgress(elements.uploadStatus, 5);
+
+        const content = await readFileAsText(file);
+        if (!content || content.trim().length === 0) {
+            throw new Error('文件内容为空');
+        }
+
+        const chunks = splitIntoChunks(content, 4000, 200);
+        console.log(`文件分块数: ${chunks.length}`);
+
+        // Check if first chunk already exists (duplicate file detection)
+        showProgress(elements.uploadStatus, '正在检查重复内容...');
+        const firstChunkId = generateFileChunkId(file.name, 0);
+        const firstChunkExists = await ChromaDBClient.checkDocumentExists(serverUrl, collectionName, firstChunkId);
+
+        let useUpsert = false;
+        if (firstChunkExists) {
+            useUpsert = confirm(
+                `文件 "${file.name}" 已存在于集合 "${collectionName}" 中。\n\n点击"确定"更新已有内容，点击"取消"取消上传。`
+            );
+            if (!useUpsert) {
+                hideProgress(elements.uploadStatus);
+                showStatus(elements.uploadStatus, '已取消：文件已存在于集合中', 'warning');
+                return;
+            }
+        }
+
+        const model = currentSettings.embeddingModel === 'custom'
+            ? currentSettings.customModel
+            : currentSettings.embeddingModel;
+
+        let savedCount = 0;
+        for (let i = 0; i < chunks.length; i++) {
+            const progressPct = Math.round(10 + (i / chunks.length) * 85);
+            showProgress(elements.uploadStatus,
+                chunks.length > 1
+                    ? `正在处理第 ${i + 1}/${chunks.length} 块...`
+                    : '正在生成向量嵌入...'
+            );
+            updateProgress(elements.uploadStatus, progressPct);
+
+            const chunkId = generateFileChunkId(file.name, i);
+            const embedding = await OllamaClient.generateEmbedding(
+                currentSettings.ollamaUrl,
+                chunks[i],
+                model
+            );
+
+            const doc = {
+                id: chunkId,
+                content: chunks[i],
+                metadata: {
+                    source: file.name,
+                    url: `file://${file.name}`,
+                    title: file.name,
+                    chunk: i,
+                    totalChunks: chunks.length,
+                    timestamp: new Date().toISOString(),
+                    type: 'file'
+                },
+                embedding
+            };
+
+            if (useUpsert) {
+                await ChromaDBClient.upsertDocument(serverUrl, collectionName, doc);
+            } else {
+                await ChromaDBClient.addDocument(serverUrl, collectionName, doc);
+            }
+            savedCount++;
+        }
+
+        updateProgress(elements.uploadStatus, 100);
+        hideProgress(elements.uploadStatus);
+        const chunkInfo = chunks.length > 1 ? `（共 ${chunks.length} 块）` : '';
+        showStatus(elements.uploadStatus,
+            `文件上传成功！已保存 ${savedCount} 条内容${chunkInfo}`,
+            'success'
+        );
+
+        // Reset file input
+        elements.fileInput.value = '';
+        elements.filePreview.classList.add('hidden');
+    } catch (error) {
+        console.error('文件上传失败:', error);
+        hideProgress(elements.uploadStatus);
+        showStatus(elements.uploadStatus, `上传失败: ${error.message}`, 'error');
+    } finally {
+        elements.uploadBtn.disabled = false;
+    }
+}
+
+// ── 删除重复文档 ──────────────────────────────────────────────────────
+
+/**
+ * 检测并删除选中集合中的重复文档
+ */
+async function removeDuplicates() {
+    const collectionName = elements.manageCollectionSelect.value.trim();
+    const serverUrl = elements.manageServerSelect.value.trim();
+
+    if (!collectionName) {
+        alert('请先选择一个集合');
+        return;
+    }
+    if (!serverUrl) {
+        alert('请先选择服务器');
+        return;
+    }
+
+    try {
+        elements.removeDuplicatesBtn.disabled = true;
+        elements.removeDuplicatesBtn.innerHTML = '<span class="btn-icon">⏳</span>检测中...';
+
+        const { urlGroups, totalDuplicates } = await ChromaDBClient.findDuplicates(serverUrl, collectionName);
+
+        if (totalDuplicates === 0) {
+            alert('未发现重复内容，集合数据已是最优状态。');
+            return;
+        }
+
+        const confirmed = confirm(
+            `发现 ${totalDuplicates} 条重复内容（来自 ${urlGroups.size} 个重复来源）。\n` +
+            `将对每个来源保留最新版本，删除旧版本。\n\n是否继续？`
+        );
+        if (!confirmed) return;
+
+        let deletedCount = 0;
+        for (const [, docs] of urlGroups.entries()) {
+            if (docs.length <= 1) continue;
+
+            // Sort newest first by timestamp
+            docs.sort((a, b) => {
+                const tA = a.metadata.timestamp ? new Date(a.metadata.timestamp).getTime() : 0;
+                const tB = b.metadata.timestamp ? new Date(b.metadata.timestamp).getTime() : 0;
+                return tB - tA;
+            });
+
+            // Delete all but the first (newest)
+            for (let i = 1; i < docs.length; i++) {
+                await ChromaDBClient.deleteDocument(serverUrl, collectionName, docs[i].id);
+                deletedCount++;
+            }
+        }
+
+        await loadContentList(collectionName);
+        alert(`已成功删除 ${deletedCount} 条重复内容。`);
+    } catch (error) {
+        console.error('删除重复内容失败:', error);
+        alert(`操作失败: ${error.message}`);
+    } finally {
+        elements.removeDuplicatesBtn.disabled = false;
+        elements.removeDuplicatesBtn.innerHTML = '<span class="btn-icon">🔍</span>删除重复';
+    }
+}
 
 // 初始化多选下拉框
 function initMultiSelectDropdowns() {
@@ -1825,9 +2233,21 @@ function updateSelectedCollections(type, collections) {
 // 保存选中的集合到存储
 async function saveSelectedCollections() {
     try {
+        // 获取当前服务器的选择
+        const captureServerUrl = elements.captureServer.value;
+        const searchServerUrl = elements.searchServer.value;
+
+        // 更新按服务器分组的选择
+        if (captureServerUrl) {
+            selectedCaptureCollectionsByServer[captureServerUrl] = [...selectedCaptureCollections];
+        }
+        if (searchServerUrl) {
+            selectedSearchCollectionsByServer[searchServerUrl] = [...selectedSearchCollections];
+        }
+
         await chrome.storage.local.set({
-            selectedCaptureCollections,
-            selectedSearchCollections
+            selectedCaptureCollectionsByServer,
+            selectedSearchCollectionsByServer
         });
     } catch (error) {
         console.error('保存选中集合失败:', error);
@@ -1837,12 +2257,12 @@ async function saveSelectedCollections() {
 // 从存储加载选中的集合
 async function loadSelectedCollections() {
     try {
-        const data = await chrome.storage.local.get(['selectedCaptureCollections', 'selectedSearchCollections']);
-        if (data.selectedCaptureCollections) {
-            selectedCaptureCollections = data.selectedCaptureCollections;
+        const data = await chrome.storage.local.get(['selectedCaptureCollectionsByServer', 'selectedSearchCollectionsByServer']);
+        if (data.selectedCaptureCollectionsByServer) {
+            selectedCaptureCollectionsByServer = data.selectedCaptureCollectionsByServer;
         }
-        if (data.selectedSearchCollections) {
-            selectedSearchCollections = data.selectedSearchCollections;
+        if (data.selectedSearchCollectionsByServer) {
+            selectedSearchCollectionsByServer = data.selectedSearchCollectionsByServer;
         }
     } catch (error) {
         console.error('加载选中集合失败:', error);

@@ -12,6 +12,7 @@
         <div class="tabs">
             <button class="tab-btn active" data-tab="capture">捕获</button>
             <button class="tab-btn" data-tab="search">搜索</button>
+            <button class="tab-btn" data-tab="upload">上传</button>
             <button class="tab-btn" data-tab="manage">管理</button>
             <button class="tab-btn" data-tab="settings">设置</button>
         </div>
@@ -101,10 +102,64 @@
                         搜索
                     </button>
                 </div>
-                
+
+                <div class="snippet-options">
+                    <label for="snippetLength">摘要字数</label>
+                    <input type="number" id="snippetLength" class="input-field snippet-length-input" value="300" min="50" max="2000" step="50">
+                    <span class="snippet-unit">字</span>
+                </div>
+
                 <div id="searchResults" class="status hidden">
                     <h3>搜索结果</h3>
                     <div class="results-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 上传标签页 -->
+        <div class="tab-content" id="upload">
+            <div class="section">
+                <h2>上传文件</h2>
+                <p class="description">上传本地文件内容并嵌入到向量数据库</p>
+
+                <div class="form-group">
+                    <label for="uploadServer">选择服务器</label>
+                    <select id="uploadServer" class="input-field">
+                        <option value="">选择服务器...</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="uploadCollection">选择集合</label>
+                    <select id="uploadCollection" class="input-field">
+                        <option value="">请先选择服务器...</option>
+                    </select>
+                    <small>选择要存储到的集合</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="fileInput">选择文件</label>
+                    <input type="file" id="fileInput" class="input-field file-input"
+                           accept=".txt,.md,.csv,.json,.html,.htm">
+                    <small>支持 .txt .md .csv .json .html 格式（大文件将自动分块）</small>
+                </div>
+
+                <div id="filePreview" class="file-preview hidden">
+                    <span class="file-preview-icon">📄</span>
+                    <span id="fileName" class="file-name"></span>
+                    <span id="fileSize" class="file-size"></span>
+                </div>
+
+                <button id="uploadBtn" class="btn btn-primary upload-btn">
+                    <span class="btn-icon">📤</span>
+                    上传并嵌入
+                </button>
+
+                <div id="uploadStatus" class="status hidden">
+                    <div class="status-message"></div>
+                    <div class="progress-bar hidden">
+                        <div class="progress-fill"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -162,6 +217,10 @@
                     <button id="refreshContentBtn" class="btn btn-secondary">
                         <span class="btn-icon">🔄</span>
                         刷新内容
+                    </button>
+                    <button id="removeDuplicatesBtn" class="btn btn-secondary">
+                        <span class="btn-icon">🔍</span>
+                        删除重复
                     </button>
                     <button id="clearAllContentBtn" class="btn btn-danger">
                         <span class="btn-icon">🗑️</span>

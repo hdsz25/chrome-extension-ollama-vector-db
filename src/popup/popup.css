@@ -275,6 +275,71 @@ h2 {
     font-weight: 500;
 }
 
+/* Result meta row (collection + score on one line) */
+.result-meta-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+}
+
+.result-collection {
+    font-size: 12px;
+    color: #6c757d;
+}
+
+/* Clickable URL link */
+.result-url a.result-url-link {
+    color: #667eea;
+    text-decoration: none;
+}
+
+.result-url a.result-url-link:hover {
+    text-decoration: underline;
+    color: #4a5fc1;
+}
+
+/* Content snippet */
+.result-snippet {
+    font-size: 13px;
+    color: #495057;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #e9ecef;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Snippet length control */
+.snippet-options {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.snippet-options label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #6c757d;
+    white-space: nowrap;
+    margin: 0;
+}
+
+.snippet-length-input {
+    width: 80px !important;
+    padding: 6px 10px !important;
+    font-size: 13px !important;
+    text-align: center;
+}
+
+.snippet-unit {
+    font-size: 13px;
+    color: #6c757d;
+    white-space: nowrap;
+}
+
 /* 管理列表 */
 .actions {
     display: flex;
@@ -718,4 +783,79 @@ h2 {
 
 .capture-buttons .btn {
     flex: 1;
+}
+
+/* 文件上传样式 */
+.file-input {
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+.file-input::-webkit-file-upload-button {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    margin-right: 10px;
+    transition: opacity 0.2s;
+}
+
+.file-input::-webkit-file-upload-button:hover {
+    opacity: 0.85;
+}
+
+.file-preview {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: #f0f4ff;
+    border: 1px solid #c5d0f5;
+    border-radius: 8px;
+    margin-top: 4px;
+    font-size: 13px;
+}
+
+.file-preview.hidden {
+    display: none;
+}
+
+.file-preview-icon {
+    font-size: 18px;
+}
+
+.file-name {
+    font-weight: 500;
+    color: #3d4d9e;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-size {
+    color: #6c757d;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.upload-btn {
+    width: 100%;
+    margin-top: 12px;
+}
+
+/* 重复文档警告 */
+.duplicate-warning {
+    padding: 10px 14px;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #856404;
+    margin-top: 8px;
 }
