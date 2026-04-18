@@ -34,7 +34,7 @@
 # 访问 https://ollama.ai 下载安装
 
 # ⚠️ 必须在启动前设置此变量，Chrome 扩展才能访问（CORS）
-# Linux / macOS
+# Linux / macOS (手动启动)
 export OLLAMA_ORIGINS=*
 ollama serve
 
@@ -48,7 +48,22 @@ set OLLAMA_ORIGINS=* && ollama serve
 ollama pull nomic-embed-text
 ```
 
-> 如果不设置 `OLLAMA_ORIGINS=*`，扩展连接 Ollama 时会出现 CORS 错误。
+**Linux / WSL (Systemd 后台服务运行时的跨域修复)**:
+如果你在 Linux 或是 Windows WSL 中使用自动安装脚本安装，Ollama 会作为 systemd 后台服务运行。你需要修改 service 环境变量：
+
+1. 执行 `sudo systemctl edit ollama.service`
+2. 在 `### Anything between here and the comment below...` 提示语下方添加：
+   ```ini
+   [Service]
+   Environment="OLLAMA_ORIGINS=*"
+   ```
+3. 保存后重启服务：
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl restart ollama
+   ```
+
+> 如果不设置 `OLLAMA_ORIGINS=*`，扩展连接 Ollama 进行嵌入向量 (`/api/embeddings`) 时会出现 `403 Forbidden` 的 CORS 错误，并且插件会报错提示“模型无法使用”。
 
 ### 2. ChromaDB（向量数据库）
 
