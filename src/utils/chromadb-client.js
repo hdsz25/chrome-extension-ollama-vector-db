@@ -499,10 +499,25 @@ const ChromaDBClient = {
                         const data = await response.json();
                         console.log(`Success with endpoint: ${endpoint}`, data);
                         
+                        // Fetch collections count separately to ensure we always get an array
+                        let collections = [];
+                        try {
+                            const collectionsEndpoint = `${url}api/v2/tenants/default_tenant/databases/default_database/collections`;
+                            const collectionsResponse = await fetch(collectionsEndpoint, {
+                                method: 'GET',
+                                headers: { 'Content-Type': 'application/json' }
+                            });
+                            if (collectionsResponse.ok) {
+                                collections = await collectionsResponse.json();
+                            }
+                        } catch (e) {
+                            console.log('获取集合列表失败:', e.message);
+                        }
+                        
                         return {
                             success: true,
                             message: '连接成功',
-                            collections: data || [],
+                            collections: Array.isArray(collections) ? collections : [],
                             endpoint: endpoint
                         };
                     }
@@ -610,11 +625,15 @@ const ChromaDBClient = {
             return { urlGroups: new Map(), totalDuplicates: 0 };
         }
 
-        // Group documents by source URL (or by id prefix for file chunks)
+        // Group documents by actual content (trimmed) to detect true duplicates.
+        // Grouping by URL would incorrectly flag different selections from the same page.
         const urlGroups = new Map();
         results.ids.forEach((id, index) => {
             const metadata = (results.metadatas && results.metadatas[index]) || {};
-            const sourceKey = metadata.url || metadata.source || id;
+            const content = (results.documents && results.documents[index]) || '';
+            const contentKey = content.trim();
+            // Fall back to URL key only when content is empty (should not happen in practice)
+            const sourceKey = contentKey || metadata.url || metadata.source || id;
             if (!urlGroups.has(sourceKey)) {
                 urlGroups.set(sourceKey, []);
             }
