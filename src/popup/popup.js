@@ -1409,49 +1409,62 @@ async function captureSelection() {
         console.log('Ollama URL:', currentSettings.ollamaUrl);
         console.log('嵌入模型:', currentSettings.embeddingModel);
         console.log('自定义模型:', currentSettings.customModel);
-        showProgress(elements.captureStatus, '正在生成向量嵌入...');
+        showProgress(elements.captureStatus, '正在分块并生成向量嵌入...');
         const model = currentSettings.embeddingModel === 'custom' 
             ? currentSettings.customModel 
             : currentSettings.embeddingModel;
         
         console.log('使用的模型:', model);
         
-        const embedding = await OllamaClient.generateEmbedding(
-            currentSettings.ollamaUrl,
-            response.content,
-            model
-        );
+        const chunks = splitIntoChunks(response.content, 4000, 200);
+        console.log(`选择内容分为 ${chunks.length} 个块`);
         
-        console.log('向量生成成功，维度:', embedding?.length);
-        updateProgress(elements.captureStatus, 70);
-
-        // 存储到 ChromaDB（支持多个集合）
-        showProgress(elements.captureStatus, '正在存储到向量数据库...');
-        const docId = generateDocId(tab.url + '-selection-' + Date.now());
+        const baseDocId = generateDocId(tab.url + '-selection-' + Date.now());
         
-        for (const collectionName of selectedCaptureCollections) {
-            await ChromaDBClient.addDocument(
-                serverUrl,
-                collectionName,
-                {
-                    id: docId,
-                    content: response.content,
-                    metadata: {
-                        url: tab.url,
-                        title: tab.title,
-                        timestamp: new Date().toISOString(),
-                        type: 'selection'
-                    },
-                    embedding: embedding
-                }
+        for (let i = 0; i < chunks.length; i++) {
+            const pct = 40 + ((i + 1) / chunks.length) * 50;
+            showProgress(elements.captureStatus, 
+                chunks.length > 1 
+                    ? `正在处理第 ${i + 1}/${chunks.length} 块...` 
+                    : `正在生成向量库嵌入...`
             );
+            updateProgress(elements.captureStatus, Math.round(pct));
+
+            const chunkText = chunks[i];
+            const embedding = await OllamaClient.generateEmbedding(
+                currentSettings.ollamaUrl,
+                chunkText,
+                model
+            );
+            
+            const chunkId = chunks.length > 1 ? `${baseDocId}-chunk-${i}` : baseDocId;
+
+            for (const collectionName of selectedCaptureCollections) {
+                await ChromaDBClient.addDocument(
+                    serverUrl,
+                    collectionName,
+                    {
+                        id: chunkId,
+                        content: chunkText,
+                        metadata: {
+                            url: tab.url,
+                            title: tab.title,
+                            timestamp: new Date().toISOString(),
+                            type: 'selection',
+                            chunk: i,
+                            totalChunks: chunks.length
+                        },
+                        embedding: embedding
+                    }
+                );
+            }
         }
         
         updateProgress(elements.captureStatus, 90);
 
         // 保存元数据到本地存储
         await Storage.addCapturedPage({
-            id: docId,
+            id: baseDocId,
             url: tab.url,
             title: tab.title,
             timestamp: new Date().toISOString(),
@@ -1560,7 +1573,7 @@ async function capturePage() {
         console.log('嵌入模型:', currentSettings.embeddingModel);
         console.log('自定义模型:', currentSettings.customModel);
         console.log('完整设置:', JSON.stringify(currentSettings, null, 2));
-        showProgress(elements.captureStatus, '正在生成向量嵌入...');
+        showProgress(elements.captureStatus, '正在分块并生成向量嵌入...');
         const model = currentSettings.embeddingModel === 'custom' 
             ? currentSettings.customModel 
             : currentSettings.embeddingModel;
@@ -1568,25 +1581,24 @@ async function capturePage() {
         console.log('使用的模型:', model);
         console.log('模型是否为空:', !model);
         
-        const embedding = await OllamaClient.generateEmbedding(
-            currentSettings.ollamaUrl,
-            cleanedContent,
-            model
-        );
-        
-        console.log('向量生成成功，维度:', embedding?.length);
-        updateProgress(elements.captureStatus, 70);
+        const chunks = splitIntoChunks(cleanedContent, 4000, 200);
+        console.log(`页面分为 ${chunks.length} 个块`);
 
         // 存储到 ChromaDB（支持多个集合）
         showProgress(elements.captureStatus, '正在检查重复内容...');
-        const docId = generateDocId(tab.url);
+        const baseDocId = generateDocId(tab.url);
+        // 使用第一块的 ID 检查重复
+        const firstChunkId = chunks.length > 1 ? `${baseDocId}-chunk-0` : baseDocId;
 
         // Check for duplicate documents in each selected collection
         const existingCollections = [];
         for (const collectionName of selectedCaptureCollections) {
             try {
-                const exists = await ChromaDBClient.checkDocumentExists(serverUrl, collectionName, docId);
-                if (exists) existingCollections.push(collectionName);
+                // 检查 chunk-0 或 baseDocId 是否存在
+                const exists = await ChromaDBClient.checkDocumentExists(serverUrl, collectionName, firstChunkId);
+                // 向后兼容，如果有老版本的单块 baseDocId 也认为是重复
+                const baseExists = chunks.length > 1 ? await ChromaDBClient.checkDocumentExists(serverUrl, collectionName, baseDocId) : false;
+                if (exists || baseExists) existingCollections.push(collectionName);
             } catch (e) {
                 console.warn(`检查集合 ${collectionName} 重复时出错:`, e);
             }
@@ -1607,24 +1619,48 @@ async function capturePage() {
             }
         }
 
-        showProgress(elements.captureStatus, '正在存储到向量数据库...');
-        for (const collectionName of selectedCaptureCollections) {
-            const isDuplicate = existingCollections.includes(collectionName);
-            if (isDuplicate && !updateMode) continue;
-            const saveDoc = {
-                id: docId,
-                content: cleanedContent,
-                metadata: {
-                    url: tab.url,
-                    title: tab.title,
-                    timestamp: new Date().toISOString()
-                },
-                embedding: embedding
-            };
-            if (isDuplicate) {
-                await ChromaDBClient.upsertDocument(serverUrl, collectionName, saveDoc);
-            } else {
-                await ChromaDBClient.addDocument(serverUrl, collectionName, saveDoc);
+        showProgress(elements.captureStatus, '正在处理向量嵌入并保存...');
+        
+        for (let i = 0; i < chunks.length; i++) {
+            const pct = 50 + ((i + 1) / chunks.length) * 40;
+            showProgress(elements.captureStatus, 
+                chunks.length > 1 
+                    ? `正在处理第 ${i + 1}/${chunks.length} 块...` 
+                    : `正在生成特征向量...`
+            );
+            updateProgress(elements.captureStatus, Math.round(pct));
+
+            const chunkText = chunks[i];
+            const embedding = await OllamaClient.generateEmbedding(
+                currentSettings.ollamaUrl,
+                chunkText,
+                model
+            );
+            
+            const chunkId = chunks.length > 1 ? `${baseDocId}-chunk-${i}` : baseDocId;
+
+            for (const collectionName of selectedCaptureCollections) {
+                const isDuplicate = existingCollections.includes(collectionName);
+                if (isDuplicate && !updateMode) continue;
+                
+                const saveDoc = {
+                    id: chunkId,
+                    content: chunkText,
+                    metadata: {
+                        url: tab.url,
+                        title: tab.title,
+                        timestamp: new Date().toISOString(),
+                        chunk: i,
+                        totalChunks: chunks.length
+                    },
+                    embedding: embedding
+                };
+                
+                if (isDuplicate) {
+                    await ChromaDBClient.upsertDocument(serverUrl, collectionName, saveDoc);
+                } else {
+                    await ChromaDBClient.addDocument(serverUrl, collectionName, saveDoc);
+                }
             }
         }
         
@@ -1632,7 +1668,7 @@ async function capturePage() {
 
         // 保存元数据到本地存储
         await Storage.addCapturedPage({
-            id: docId,
+            id: baseDocId,
             url: tab.url,
             title: tab.title,
             timestamp: new Date().toISOString()

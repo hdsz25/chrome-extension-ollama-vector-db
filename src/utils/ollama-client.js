@@ -113,7 +113,20 @@ const OllamaClient = {
         } else if (lastError && lastError.status === 404) {
             throw new Error(`Ollama API 端点未找到，请检查服务器地址: ${url}`);
         } else {
-            throw new Error(`生成嵌入向量失败: ${lastError?.message || '未知错误'}`);
+            let errorDetails = '未知错误';
+            if (lastError) {
+                if (lastError.message) {
+                    errorDetails = lastError.message;
+                } else if (lastError.text) {
+                    try {
+                        const parsed = JSON.parse(lastError.text);
+                        errorDetails = parsed.error || lastError.text;
+                    } catch (e) {
+                        errorDetails = lastError.text;
+                    }
+                }
+            }
+            throw new Error(`生成嵌入向量失败: ${errorDetails}`);
         }
     },
 
